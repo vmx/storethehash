@@ -18,35 +18,82 @@ pub struct Record<'a> {
 /// The main object that contains several [`Record`]s. Records can be stored and retrieved.
 #[derive(Debug)]
 pub struct RecordList<'a> {
-    /// The data we are iterating over
+    /// The bytes containing the records
     data: &'a [u8],
-    /// The current position within the data
-    pos: usize,
 }
 
 impl<'a> RecordList<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
+        Self { data }
+    }
+
+    /// Add a new key to the data
+    ///
+    /// It returns a full copy of the data with the new key added.
+    pub fn add(&self, key: &[u8], file_offset: u64) -> Vec<u8> {
+        let mut result =
+            Vec::with_capacity(self.data.len() + mem::size_of::<u64>() + 1 + key.len());
+
+        for record in self {
+            // Location where the key gets inserted is found
+            if record.key > key {
+                // Copy the all data up to the current point into a new vector
+                result.extend_from_slice(&self.data[0..record.pos]);
+
+                // Add the new key
+                // TODO vmx 2020-11-20: Trim the key to the minimum
+                let encoded = &encode_offset_and_key(key, file_offset);
+                result.extend_from_slice(&encoded);
+
+                // Copy the rest of the existing keys
+                result.extend_from_slice(&self.data[record.pos..]);
+                println!("vmx: bigger");
+                return result;
+            }
+        }
+
+        result
     }
 }
 
-impl<'a> Iterator for RecordList<'a> {
+impl<'a> IntoIterator for &'a RecordList<'a> {
+    type Item = Record<'a>;
+    type IntoIter = RecordListIter<'a>;
+
+    fn into_iter(self) -> RecordListIter<'a> {
+        RecordListIter {
+            records: &self,
+            pos: 0,
+        }
+    }
+}
+
+/// The main object that contains several [`Record`]s. Records can be stored and retrieved.
+#[derive(Debug)]
+pub struct RecordListIter<'a> {
+    /// The data we are iterating over
+    records: &'a RecordList<'a>,
+    /// The current position within the data
+    pos: usize,
+}
+
+impl<'a> Iterator for RecordListIter<'a> {
     type Item = Record<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.pos >= self.data.len() {
+        if self.pos >= self.records.data.len() {
             return None;
         }
 
         // Decode a single record
         let size_offset = self.pos + mem::size_of::<u64>();
-        let file_offset: [u8; 8] = self.data[self.pos..size_offset]
+        let file_offset: [u8; 8] = self.records.data[self.pos..size_offset]
             .try_into()
             .expect("This slice always has the correct size.");
-        let size = usize::from(self.data[size_offset]);
+        let size = usize::from(self.records.data[size_offset]);
         let record = Record {
             pos: self.pos,
-            key: &self.data[size_offset + 1..size_offset + 1 + size],
+            key: &self.records.data[size_offset + 1..size_offset + 1 + size],
             file_offset: u64::from_le_bytes(file_offset),
         };
 
@@ -118,9 +165,37 @@ mod tests {
         }
 
         // Verify that it can be correctly iterated over those encoded records
-        let mut records = RecordList::new(&data);
+        let records = RecordList::new(&data);
+        let mut records_iter = records.into_iter();
         for record in &expected {
-            assert_eq!(&records.next().unwrap(), record);
+            assert_eq!(&records_iter.next().unwrap(), record);
         }
+    }
+
+    #[test]
+    fn record_list_add() {
+        // Create data
+        let keys: Vec<&str> = vec!["a", "ab", "b", "c", "d", "de", "df", "g"];
+        let mut data = Vec::new();
+        for (ii, key) in keys.iter().enumerate() {
+            let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
+            data.extend_from_slice(&encoded);
+        }
+        let records = RecordList::new(&data);
+
+        // Add a new record
+        let key = "cabefg";
+        let new_data = records.add(key.as_bytes(), 773);
+        let new_records = RecordList::new(&new_data);
+
+        // Validate that the new record was properly added
+        let new_keys: Vec<String> = new_records
+            .into_iter()
+            .map(|record| String::from_utf8(record.key.to_vec()).unwrap())
+            .collect();
+        let mut expected: Vec<String> = keys.iter().map(|key| key.to_string()).collect();
+        expected.push(key.to_string());
+        expected.sort();
+        assert_eq!(new_keys, expected);
     }
 }
