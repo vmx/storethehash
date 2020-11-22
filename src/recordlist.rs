@@ -54,6 +54,23 @@ impl<'a> RecordList<'a> {
 
         result
     }
+
+    /// Finds the position where a key would be added
+    ///
+    /// Returns the position together with the previous key.
+    pub fn find_key_position(&self, key: &[u8]) -> (usize, Option<&[u8]>) {
+        let mut prev_key = None;
+        for record in self {
+            // Location where the key gets inserted is found
+            if record.key > key {
+                return (record.pos, prev_key);
+            }
+
+            prev_key = Some(record.key)
+        }
+
+        (self.data.len(), prev_key)
+    }
 }
 
 impl<'a> IntoIterator for &'a RecordList<'a> {
@@ -197,5 +214,61 @@ mod tests {
         expected.push(key.to_string());
         expected.sort();
         assert_eq!(new_keys, expected);
+    }
+
+    #[test]
+    fn record_list_find_key_position() {
+        // Create data
+        let keys: Vec<&str> = vec!["a", "ac", "b", "d", "de", "dn", "nky", "xrlfg"];
+        let mut data = Vec::new();
+        for (ii, key) in keys.iter().enumerate() {
+            let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
+            data.extend_from_slice(&encoded);
+        }
+        let records = RecordList::new(&data);
+
+        // First key
+        let (pos, prev_key) = records.find_key_position(b"ABCD");
+        assert_eq!(pos, 0);
+        assert_eq!(prev_key, None);
+
+        // Between two keys with same prefix, but first one being shorter
+        let (pos, prev_key) = records.find_key_position(b"ab");
+        assert_eq!(pos, 10);
+        assert_eq!(prev_key.unwrap(), b"a");
+
+        // Between to keys with both having a different prefix
+        let (pos, prev_key) = records.find_key_position(b"c");
+        assert_eq!(pos, 31);
+        assert_eq!(prev_key.unwrap(), b"b");
+
+        // Between two keys with both having a different prefix and the input key having a
+        // different length
+        let (pos, prev_key) = records.find_key_position(b"cabefg");
+        assert_eq!(pos, 31);
+        assert_eq!(prev_key.unwrap(), b"b");
+
+        // Between two keys with both having a different prefix (with one character in common),
+        // all keys having the same length
+        let (pos, prev_key) = records.find_key_position(b"dg");
+        assert_eq!(pos, 52);
+        assert_eq!(prev_key.unwrap(), b"de");
+
+        // Between two keys with both having a different prefix, no charachter in in common and
+        // different length (shorter than the input key)
+        let (pos, prev_key) = records.find_key_position(b"hello");
+        assert_eq!(pos, 63);
+        assert_eq!(prev_key.unwrap(), b"dn");
+
+        // Between two keys with both having a different prefix, no charachter in in common and
+        // different length (longer than the input key)
+        let (pos, prev_key) = records.find_key_position(b"pz");
+        assert_eq!(pos, 75);
+        assert_eq!(prev_key.unwrap(), b"nky");
+
+        // Last key
+        let (pos, prev_key) = records.find_key_position(b"z");
+        assert_eq!(pos, 89);
+        assert_eq!(prev_key.unwrap(), b"xrlfg");
     }
 }
