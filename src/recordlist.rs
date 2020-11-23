@@ -1,4 +1,4 @@
-///! Implement a data structure that supports storing and retrieving file offsets by key
+///! Implement a data structure that supports storing and retrieving file offsets by key.
 use std::convert::TryInto;
 use std::mem;
 
@@ -8,17 +8,16 @@ use std::mem;
 pub struct Record<'a> {
     // The current position (in bytes) of the record within the [`RecordList`]
     pos: usize,
-    // The key of the record
-    //key: Vec<u8>,
+    /// The key of the record.
     key: &'a [u8],
-    // The file offset where the full key and its value is actually stored
+    /// The file offset where the full key and its value is actually stored.
     file_offset: u64,
 }
 
 /// The main object that contains several [`Record`]s. Records can be stored and retrieved.
 #[derive(Debug)]
 pub struct RecordList<'a> {
-    /// The bytes containing the records
+    /// The bytes containing the records.
     data: &'a [u8],
 }
 
@@ -27,7 +26,7 @@ impl<'a> RecordList<'a> {
         Self { data }
     }
 
-    /// Add a new key to the data
+    /// Add a new key to the data.
     ///
     /// It returns a full copy of the data with the new key added.
     pub fn add(&self, key: &[u8], file_offset: u64) -> Vec<u8> {
@@ -55,7 +54,7 @@ impl<'a> RecordList<'a> {
         result
     }
 
-    /// Finds the position where a key would be added
+    /// Finds the position where a key would be added.
     ///
     /// Returns the position together with the previous key.
     pub fn find_key_position(&self, key: &[u8]) -> (usize, Option<&[u8]>) {
