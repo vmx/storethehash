@@ -1,6 +1,11 @@
 ///! Implement a data structure that supports storing and retrieving file offsets by key.
 use std::convert::TryInto;
-use std::mem;
+use std::ops::Range;
+
+// Byte size of the file offset
+const FILE_OFFSET_BYTES: usize = 8;
+// The key has a one byte prefix
+const KEY_SIZE_BYTE: usize = 1;
 
 /// A single record contains a key, which is the unique prefix of the actual key, and the value
 /// which is a file offset.
@@ -26,49 +31,105 @@ impl<'a> RecordList<'a> {
         Self { data }
     }
 
-    /// Add a new key to the data.
+    /// Finds the position where a key would be added.
     ///
-    /// It returns a full copy of the data with the new key added.
-    pub fn add(&self, key: &[u8], file_offset: u64) -> Vec<u8> {
-        let mut result =
-            Vec::with_capacity(self.data.len() + mem::size_of::<u64>() + 1 + key.len());
-
+    /// Returns the position together with the previous record.
+    pub fn find_key_position(&self, key: &[u8]) -> (usize, Option<Record>) {
+        let mut prev_record = None;
         for record in self {
             // Location where the key gets inserted is found
             if record.key > key {
-                // Copy the all data up to the current point into a new vector
-                result.extend_from_slice(&self.data[0..record.pos]);
-
-                // Add the new key
-                // TODO vmx 2020-11-20: Trim the key to the minimum
-                let encoded = &encode_offset_and_key(key, file_offset);
-                result.extend_from_slice(&encoded);
-
-                // Copy the rest of the existing keys
-                result.extend_from_slice(&self.data[record.pos..]);
-                println!("vmx: bigger");
-                return result;
+                return (record.pos, prev_record);
+            } else {
+                prev_record = Some(record)
             }
         }
+
+        (self.data.len(), prev_record)
+    }
+
+    /// Add a new key with a corresponding file offset.
+    pub fn add_key(&self, key: &[u8], file_offset: u64, pos: usize) -> Vec<u8> {
+        let mut result =
+            Vec::with_capacity(self.data.len() + FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
+
+        // Copy the all data up to the current point into a new vector
+        result.extend_from_slice(&self.data[0..pos]);
+
+        // Add the new key
+        let encoded = &encode_offset_and_key(key, file_offset);
+        result.extend_from_slice(&encoded);
+
+        // Copy the rest of the existing keys
+        result.extend_from_slice(&self.data[pos..]);
 
         result
     }
 
-    /// Finds the position where a key would be added.
+    /// Add a new key with a corresponding file offset while replacing the previous key.
     ///
-    /// Returns the position together with the previous key.
-    pub fn find_key_position(&self, key: &[u8]) -> (usize, Option<&[u8]>) {
-        let mut prev_key = None;
-        for record in self {
-            // Location where the key gets inserted is found
-            if record.key > key {
-                return (record.pos, prev_key);
-            }
+    /// The use case is when the previous key is a fully contained in the new key. The previous key
+    /// needs to be changed in order to be distinguishable from the new key.
+    pub fn add_key_and_replace_prev(
+        &self,
+        key: &[u8],
+        file_offset: u64,
+        range: Range<usize>,
+        prev_key: &[u8],
+    ) -> Vec<u8> {
+        let mut result = Vec::with_capacity(
+            self.data.len() - (range.end - range.start)
+                + KEY_SIZE_BYTE
+                + prev_key.len()
+                + FILE_OFFSET_BYTES
+                + KEY_SIZE_BYTE
+                + key.len(),
+        );
+        // Copy the all data up to the previous key size byte into a new vector
+        result.extend_from_slice(&self.data[0..range.start]);
 
-            prev_key = Some(record.key)
+        // Replace the old previous key and its size byte
+        let prev_key_size: u8 = prev_key
+            .len()
+            .try_into()
+            .expect("Key is always smaller than 256 bytes");
+        result.push(prev_key_size);
+        result.extend_from_slice(prev_key);
+
+        // Add the new key
+        let encoded = &encode_offset_and_key(key, file_offset);
+        result.extend_from_slice(&encoded);
+
+        // Copy the rest of the existing keys
+        result.extend_from_slice(&self.data[range.end..]);
+
+        result
+    }
+
+    /// Put keys at a certain position and return the new data.
+    ///
+    /// This method puts a continuous range of keys inside the data structure. The given range
+    /// is where it is put. This means that you can also override existing keys.
+    ///
+    /// This is needed if you insert a new key that fully contains an existing key. The existing
+    /// key needs to replaced by one with a larger prefix, so that it is distinguishable from the
+    /// new key.
+    pub fn put_keys(&self, keys: &[(&[u8], u64)], range: Range<usize>) -> Vec<u8> {
+        let mut result = Vec::with_capacity(
+            self.data.len() - (range.end - range.start)
+                // Each key might have a different size, so just allocate an arbitrary size to
+                // prevent more allocations. I picked 32 bytes as I don't expect hashes (hence
+                // keys) to be bigger that that
+                + keys.len() * (KEY_SIZE_BYTE + FILE_OFFSET_BYTES + 32),
+        );
+
+        result.extend_from_slice(&self.data[0..range.start]);
+        for (key, file_offset) in keys {
+            extend_with_offset_and_key(&mut result, key, *file_offset);
         }
+        result.extend_from_slice(&self.data[range.end..]);
 
-        (self.data.len(), prev_key)
+        result
     }
 }
 
@@ -102,20 +163,20 @@ impl<'a> Iterator for RecordListIter<'a> {
         }
 
         // Decode a single record
-        let size_offset = self.pos + mem::size_of::<u64>();
+        let size_offset = self.pos + FILE_OFFSET_BYTES;
         let file_offset: [u8; 8] = self.records.data[self.pos..size_offset]
             .try_into()
             .expect("This slice always has the correct size.");
         let size = usize::from(self.records.data[size_offset]);
         let record = Record {
             pos: self.pos,
-            key: &self.records.data[size_offset + 1..size_offset + 1 + size],
+            key: &self.records.data
+                [size_offset + KEY_SIZE_BYTE..size_offset + KEY_SIZE_BYTE + size],
             file_offset: u64::from_le_bytes(file_offset),
         };
 
         // Prepare the internal state for the next call
-        // Size byte + 8 byte file offset + size of the key
-        self.pos += 1 + mem::size_of::<u64>() + size;
+        self.pos += KEY_SIZE_BYTE + FILE_OFFSET_BYTES + size;
 
         Some(record)
     }
@@ -130,20 +191,34 @@ impl<'a> Iterator for RecordListIter<'a> {
 ///     | Pointer to actual data | Size of the key |            Key            |
 /// ```
 fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
+    extend_with_offset_and_key(&mut encoded, key, offset);
+    encoded
+}
+
+/// Extends a vector with an encoded key and a file offset.
+///
+/// The format is:
+///
+/// ```text
+///     |         8 bytes        |      1 byte     | Variable size < 256 bytes |
+///     | Pointer to actual data | Size of the key |            Key            |
+/// ```
+fn extend_with_offset_and_key(vec: &mut Vec<u8>, key: &[u8], offset: u64) {
     let size: u8 = key
         .len()
         .try_into()
         .expect("Key is always smaller than 256 bytes");
-    let mut encoded = Vec::with_capacity(mem::size_of::<u64>() + 1 + size as usize);
-    encoded.extend_from_slice(&offset.to_le_bytes());
-    encoded.push(size);
-    encoded.extend_from_slice(key);
-    encoded
+    vec.extend_from_slice(&offset.to_le_bytes());
+    vec.push(size);
+    vec.extend_from_slice(key);
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_offset_and_key, Record, RecordList};
+    use super::{encode_offset_and_key, Record, RecordList, FILE_OFFSET_BYTES, KEY_SIZE_BYTE};
+
+    use std::str;
 
     #[test]
     fn test_encode_offset_and_key() {
@@ -189,33 +264,6 @@ mod tests {
     }
 
     #[test]
-    fn record_list_add() {
-        // Create data
-        let keys: Vec<&str> = vec!["a", "ab", "b", "c", "d", "de", "df", "g"];
-        let mut data = Vec::new();
-        for (ii, key) in keys.iter().enumerate() {
-            let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
-            data.extend_from_slice(&encoded);
-        }
-        let records = RecordList::new(&data);
-
-        // Add a new record
-        let key = "cabefg";
-        let new_data = records.add(key.as_bytes(), 773);
-        let new_records = RecordList::new(&new_data);
-
-        // Validate that the new record was properly added
-        let new_keys: Vec<String> = new_records
-            .into_iter()
-            .map(|record| String::from_utf8(record.key.to_vec()).unwrap())
-            .collect();
-        let mut expected: Vec<String> = keys.iter().map(|key| key.to_string()).collect();
-        expected.push(key.to_string());
-        expected.sort();
-        assert_eq!(new_keys, expected);
-    }
-
-    #[test]
     fn record_list_find_key_position() {
         // Create data
         let keys: Vec<&str> = vec!["a", "ac", "b", "d", "de", "dn", "nky", "xrlfg"];
@@ -227,47 +275,162 @@ mod tests {
         let records = RecordList::new(&data);
 
         // First key
-        let (pos, prev_key) = records.find_key_position(b"ABCD");
+        let (pos, prev_record) = records.find_key_position(b"ABCD");
         assert_eq!(pos, 0);
-        assert_eq!(prev_key, None);
+        assert_eq!(prev_record, None);
 
         // Between two keys with same prefix, but first one being shorter
-        let (pos, prev_key) = records.find_key_position(b"ab");
+        let (pos, prev_record) = records.find_key_position(b"ab");
         assert_eq!(pos, 10);
-        assert_eq!(prev_key.unwrap(), b"a");
+        assert_eq!(prev_record.unwrap().key, b"a");
 
         // Between to keys with both having a different prefix
-        let (pos, prev_key) = records.find_key_position(b"c");
+        let (pos, prev_record) = records.find_key_position(b"c");
         assert_eq!(pos, 31);
-        assert_eq!(prev_key.unwrap(), b"b");
+        assert_eq!(prev_record.unwrap().key, b"b");
 
         // Between two keys with both having a different prefix and the input key having a
         // different length
-        let (pos, prev_key) = records.find_key_position(b"cabefg");
+        let (pos, prev_record) = records.find_key_position(b"cabefg");
         assert_eq!(pos, 31);
-        assert_eq!(prev_key.unwrap(), b"b");
+        assert_eq!(prev_record.unwrap().key, b"b");
 
         // Between two keys with both having a different prefix (with one character in common),
         // all keys having the same length
-        let (pos, prev_key) = records.find_key_position(b"dg");
+        let (pos, prev_record) = records.find_key_position(b"dg");
         assert_eq!(pos, 52);
-        assert_eq!(prev_key.unwrap(), b"de");
+        assert_eq!(prev_record.unwrap().key, b"de");
 
         // Between two keys with both having a different prefix, no charachter in in common and
         // different length (shorter than the input key)
-        let (pos, prev_key) = records.find_key_position(b"hello");
+        let (pos, prev_record) = records.find_key_position(b"hello");
         assert_eq!(pos, 63);
-        assert_eq!(prev_key.unwrap(), b"dn");
+        assert_eq!(prev_record.unwrap().key, b"dn");
 
         // Between two keys with both having a different prefix, no charachter in in common and
         // different length (longer than the input key)
-        let (pos, prev_key) = records.find_key_position(b"pz");
+        let (pos, prev_record) = records.find_key_position(b"pz");
         assert_eq!(pos, 75);
-        assert_eq!(prev_key.unwrap(), b"nky");
+        assert_eq!(prev_record.unwrap().key, b"nky");
 
         // Last key
-        let (pos, prev_key) = records.find_key_position(b"z");
+        let (pos, prev_record) = records.find_key_position(b"z");
         assert_eq!(pos, 89);
-        assert_eq!(prev_key.unwrap(), b"xrlfg");
+        assert_eq!(prev_record.unwrap().key, b"xrlfg");
+    }
+
+    // Validate that the new key was properly added
+    fn assert_add_key(records: &RecordList, key: &[u8]) {
+        let (pos, _prev_record) = records.find_key_position(key);
+        let new_data = records.put_keys(&[(key, 773)], pos..pos);
+        let new_records = RecordList::new(&new_data);
+        let (inserted_pos, inserted_record) = new_records.find_key_position(key);
+        assert_eq!(
+            inserted_pos,
+            pos + FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len()
+        );
+        assert_eq!(inserted_record.unwrap().key, key);
+    }
+
+    #[test]
+    fn record_list_add_key_without_replacing() {
+        // Create data
+        let keys: Vec<&str> = vec!["a", "ac", "b", "d", "de", "dn", "nky", "xrlfg"];
+        let mut data = Vec::new();
+        for (ii, key) in keys.iter().enumerate() {
+            let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
+            data.extend_from_slice(&encoded);
+        }
+        let records = RecordList::new(&data);
+
+        // First key
+        assert_add_key(&records, b"ABCD");
+
+        // Between two keys with same prefix, but first one being shorter
+        assert_add_key(&records, b"ab");
+
+        // Between to keys with both having a different prefix
+        assert_add_key(&records, b"c");
+
+        // Between two keys with both having a different prefix and the input key having a
+        // different length
+        assert_add_key(&records, b"cabefg");
+
+        // Between two keys with both having a different prefix (with one character in common),
+        // all keys having the same length
+        assert_add_key(&records, b"dg");
+
+        // Between two keys with both having a different prefix, no charachter in in common and
+        // different length (shorter than the input key)
+        assert_add_key(&records, b"hello");
+
+        // Between two keys with both having a different prefix, no charachter in in common and
+        // different length (longer than the input key)
+        assert_add_key(&records, b"pz");
+
+        // Last key
+        assert_add_key(&records, b"z");
+    }
+
+    // Validate that the previous key was properly replaced and the new key was added.
+    fn assert_add_key_and_replace_prev(records: &RecordList, key: &[u8], new_prev_key: &[u8]) {
+        let (pos, prev_record) = records.find_key_position(key);
+        let prev_record = prev_record.unwrap();
+
+        let keys = [(new_prev_key, prev_record.file_offset), (key, 770)];
+        let new_data = records.put_keys(&keys, prev_record.pos..pos);
+        let new_records = RecordList::new(&new_data);
+
+        // Find the newly added prev_key
+        let (inserted_prev_key_pos, inserted_prev_record) =
+            new_records.find_key_position(new_prev_key);
+        let inserted_prev_record = inserted_prev_record.unwrap();
+        assert_eq!(inserted_prev_record.pos, prev_record.pos);
+        assert_eq!(inserted_prev_record.key, new_prev_key);
+
+        // Find the newly added key
+        let (inserted_pos, inserted_record) = new_records.find_key_position(key);
+        assert_eq!(
+            inserted_pos,
+            // The prev key is longer, hence use its position instead of the original one
+            inserted_prev_key_pos + FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len()
+        );
+        assert_eq!(inserted_record.unwrap().key, key);
+    }
+
+    // If a new key is added and it fully contains the previous key, them the previous key needs
+    // to be updated as well. This is what these tests are about.
+    #[test]
+    fn record_list_add_key_and_replace_prev() {
+        // Create data
+        let keys: Vec<&str> = vec!["a", "ac", "b", "d", "de", "dn", "nky", "xrlfg"];
+        let mut data = Vec::new();
+        for (ii, key) in keys.iter().enumerate() {
+            let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
+            data.extend_from_slice(&encoded);
+        }
+        let records = RecordList::new(&data);
+
+        // Between two keys with same prefix, but first one being shorter
+        assert_add_key_and_replace_prev(&records, b"ab", b"aa");
+
+        // Between two keys with same prefix, but first one being shorter. Replacing the previous
+        // key which is more than one character longer than the existong one.
+        assert_add_key_and_replace_prev(&records, b"ab", b"aaaa");
+
+        // Between to keys with both having a different prefix
+        assert_add_key_and_replace_prev(&records, b"c", b"bx");
+
+        // Between two keys with both having a different prefix and the input key having a
+        // different length
+        assert_add_key_and_replace_prev(&records, b"cabefg", b"bbccdd");
+
+        // Between two keys with both having a different prefix (with one character in common),
+        // extending the prev key with an additional character to be distinguishable from the new
+        // key
+        assert_add_key_and_replace_prev(&records, b"deq", b"dej");
+
+        // Last key
+        assert_add_key_and_replace_prev(&records, b"xrlfgu", b"xrlfgs");
     }
 }
