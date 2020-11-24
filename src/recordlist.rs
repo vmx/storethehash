@@ -48,64 +48,6 @@ impl<'a> RecordList<'a> {
         (self.data.len(), prev_record)
     }
 
-    /// Add a new key with a corresponding file offset.
-    pub fn add_key(&self, key: &[u8], file_offset: u64, pos: usize) -> Vec<u8> {
-        let mut result =
-            Vec::with_capacity(self.data.len() + FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
-
-        // Copy the all data up to the current point into a new vector
-        result.extend_from_slice(&self.data[0..pos]);
-
-        // Add the new key
-        let encoded = &encode_offset_and_key(key, file_offset);
-        result.extend_from_slice(&encoded);
-
-        // Copy the rest of the existing keys
-        result.extend_from_slice(&self.data[pos..]);
-
-        result
-    }
-
-    /// Add a new key with a corresponding file offset while replacing the previous key.
-    ///
-    /// The use case is when the previous key is a fully contained in the new key. The previous key
-    /// needs to be changed in order to be distinguishable from the new key.
-    pub fn add_key_and_replace_prev(
-        &self,
-        key: &[u8],
-        file_offset: u64,
-        range: Range<usize>,
-        prev_key: &[u8],
-    ) -> Vec<u8> {
-        let mut result = Vec::with_capacity(
-            self.data.len() - (range.end - range.start)
-                + KEY_SIZE_BYTE
-                + prev_key.len()
-                + FILE_OFFSET_BYTES
-                + KEY_SIZE_BYTE
-                + key.len(),
-        );
-        // Copy the all data up to the previous key size byte into a new vector
-        result.extend_from_slice(&self.data[0..range.start]);
-
-        // Replace the old previous key and its size byte
-        let prev_key_size: u8 = prev_key
-            .len()
-            .try_into()
-            .expect("Key is always smaller than 256 bytes");
-        result.push(prev_key_size);
-        result.extend_from_slice(prev_key);
-
-        // Add the new key
-        let encoded = &encode_offset_and_key(key, file_offset);
-        result.extend_from_slice(&encoded);
-
-        // Copy the rest of the existing keys
-        result.extend_from_slice(&self.data[range.end..]);
-
-        result
-    }
-
     /// Put keys at a certain position and return the new data.
     ///
     /// This method puts a continuous range of keys inside the data structure. The given range
@@ -182,20 +124,6 @@ impl<'a> Iterator for RecordListIter<'a> {
     }
 }
 
-/// Encodes a key and a file offset that can be appended to the serialized form of the record list
-///
-/// The format is:
-///
-/// ```text
-///     |         8 bytes        |      1 byte     | Variable size < 256 bytes |
-///     | Pointer to actual data | Size of the key |            Key            |
-/// ```
-fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
-    let mut encoded = Vec::with_capacity(FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
-    extend_with_offset_and_key(&mut encoded, key, offset);
-    encoded
-}
-
 /// Extends a vector with an encoded key and a file offset.
 ///
 /// The format is:
@@ -216,9 +144,15 @@ fn extend_with_offset_and_key(vec: &mut Vec<u8>, key: &[u8], offset: u64) {
 
 #[cfg(test)]
 mod tests {
-    use super::{encode_offset_and_key, Record, RecordList, FILE_OFFSET_BYTES, KEY_SIZE_BYTE};
+    use super::{extend_with_offset_and_key, Record, RecordList, FILE_OFFSET_BYTES, KEY_SIZE_BYTE};
 
     use std::str;
+
+    fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
+        let mut encoded = Vec::with_capacity(FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
+        extend_with_offset_and_key(&mut encoded, key, offset);
+        encoded
+    }
 
     #[test]
     fn test_encode_offset_and_key() {
