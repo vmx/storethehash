@@ -73,6 +73,22 @@ impl<'a> RecordList<'a> {
 
         result
     }
+
+    /// Reads a record from a slice at the givem position.
+    ///
+    /// The given position must point to the first byte where the record starts.
+    pub fn read_record(&self, pos: usize) -> Record {
+        let size_offset = pos + FILE_OFFSET_BYTES;
+        let file_offset: [u8; 8] = self.data[pos..size_offset]
+            .try_into()
+            .expect("This slice always has the correct size.");
+        let size = usize::from(self.data[size_offset]);
+        Record {
+            pos: pos,
+            key: &self.data[size_offset + KEY_SIZE_BYTE..size_offset + KEY_SIZE_BYTE + size],
+            file_offset: u64::from_le_bytes(file_offset),
+        }
+    }
 }
 
 impl<'a> IntoIterator for &'a RecordList<'a> {
@@ -104,22 +120,9 @@ impl<'a> Iterator for RecordListIter<'a> {
             return None;
         }
 
-        // Decode a single record
-        let size_offset = self.pos + FILE_OFFSET_BYTES;
-        let file_offset: [u8; 8] = self.records.data[self.pos..size_offset]
-            .try_into()
-            .expect("This slice always has the correct size.");
-        let size = usize::from(self.records.data[size_offset]);
-        let record = Record {
-            pos: self.pos,
-            key: &self.records.data
-                [size_offset + KEY_SIZE_BYTE..size_offset + KEY_SIZE_BYTE + size],
-            file_offset: u64::from_le_bytes(file_offset),
-        };
-
+        let record = self.records.read_record(self.pos);
         // Prepare the internal state for the next call
-        self.pos += KEY_SIZE_BYTE + FILE_OFFSET_BYTES + size;
-
+        self.pos += FILE_OFFSET_BYTES + KEY_SIZE_BYTE + record.key.len();
         Some(record)
     }
 }
