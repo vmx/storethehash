@@ -40,10 +40,8 @@ impl PrimaryStorage for CarFile {
     }
 }
 
-fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>) {
+fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_path: &str) {
     const BUCKETS_BITS: u8 = 24;
-    let temp_dir = tempfile::tempdir().unwrap();
-    let index_path = temp_dir.path().join("storethehash.index");
     let mut index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
     let mut counter = 0;
@@ -60,17 +58,19 @@ fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>) {
 }
 
 fn main() {
-    let car_path = env::args().skip(1).next();
-    match car_path {
-        Some(path) => {
-            let car_file_for_iter = File::open(&path).unwrap();
+    let mut args = env::args().skip(1);
+    let car_path_arg = args.next();
+    let index_path_arg = args.next();
+    match (car_path_arg, index_path_arg) {
+        (Some(car_path), Some(index_path)) => {
+            let car_file_for_iter = File::open(&car_path).unwrap();
             let car_file_for_iter_reader = BufReader::new(car_file_for_iter);
             let car_iter = CarIter::new(car_file_for_iter_reader);
 
-            let car_file_for_index = File::open(&path).unwrap();
+            let car_file_for_index = File::open(&car_path).unwrap();
             let primary_storage = CarFile::new(car_file_for_index);
-            insert_into_index(primary_storage, car_iter);
+            insert_into_index(primary_storage, car_iter, &index_path);
         }
-        None => println!("usage: fromcarfile <path-to-car-file>"),
+        _ => println!("usage: fromcarfile <path-to-car-file> <index-file>"),
     }
 }
