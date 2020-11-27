@@ -8,7 +8,7 @@ use crate::primary::PrimaryError;
 pub enum Error {
     #[error("IO Error: {0}")]
     Io(#[from] io::Error),
-    #[error("Buckets error.")]
+    #[error("Buckets out of bound error.")]
     BucketsOutOfBounds,
     #[error("Primary storage error: {0}")]
     Primary(#[from] PrimaryError),
