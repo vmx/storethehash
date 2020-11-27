@@ -2,6 +2,9 @@
 use std::convert::TryInto;
 use std::ops::Range;
 
+/// How many bytes the buckets bits information has. It prefixes all record lists.
+pub const BUCKETS_BITS_SIZE: usize = 4;
+
 // Byte size of the file offset
 const FILE_OFFSET_BYTES: usize = 8;
 // The key has a one byte prefix
@@ -20,6 +23,15 @@ pub struct Record<'a> {
 }
 
 /// The main object that contains several [`Record`]s. Records can be stored and retrieved.
+///
+/// The underlying data is a continuous range of bytes. The format is:
+///
+/// ```text
+///     |                  Once                  |      Repeated     |
+///     |                                        |                   |
+///     |                 4 bytes                | Variable size | … |
+///     | Bit value used to determine the bucket |     Record    | … |
+/// ```
 #[derive(Debug)]
 pub struct RecordList<'a> {
     /// The bytes containing the records.
@@ -28,7 +40,11 @@ pub struct RecordList<'a> {
 
 impl<'a> RecordList<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data }
+        // The record list itself doesn't care about the bits that were used to associate it with a
+        // bucket, hence we just skip those.
+        Self {
+            data: &data[BUCKETS_BITS_SIZE..],
+        }
     }
 
     /// Finds the position where a key would be added.
@@ -88,6 +104,11 @@ impl<'a> RecordList<'a> {
             key: &self.data[size_offset + KEY_SIZE_BYTE..size_offset + KEY_SIZE_BYTE + size],
             file_offset: u64::from_le_bytes(file_offset),
         }
+    }
+
+    /// The length of the record list.
+    pub fn len(&self) -> usize {
+        self.data.len()
     }
 }
 
@@ -193,8 +214,10 @@ mod tests {
             data.extend_from_slice(&encoded);
         }
 
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_data = &[&[0, 0, 0, 0], &data[..]].concat();
         // Verify that it can be correctly iterated over those encoded records
-        let records = RecordList::new(&data);
+        let records = RecordList::new(&prefixed_data);
         let mut records_iter = records.into_iter();
         for record in &expected {
             assert_eq!(&records_iter.next().unwrap(), record);
@@ -210,7 +233,9 @@ mod tests {
             let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
             data.extend_from_slice(&encoded);
         }
-        let records = RecordList::new(&data);
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_data = &[&[0, 0, 0, 0], &data[..]].concat();
+        let records = RecordList::new(&prefixed_data);
 
         // First key
         let (pos, prev_record) = records.find_key_position(b"ABCD");
@@ -261,7 +286,9 @@ mod tests {
     fn assert_add_key(records: &RecordList, key: &[u8]) {
         let (pos, _prev_record) = records.find_key_position(key);
         let new_data = records.put_keys(&[(key, 773)], pos..pos);
-        let new_records = RecordList::new(&new_data);
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_new_data = &[&[0, 0, 0, 0], &new_data[..]].concat();
+        let new_records = RecordList::new(&prefixed_new_data);
         let (inserted_pos, inserted_record) = new_records.find_key_position(key);
         assert_eq!(
             inserted_pos,
@@ -279,7 +306,9 @@ mod tests {
             let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
             data.extend_from_slice(&encoded);
         }
-        let records = RecordList::new(&data);
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_data = &[&[0, 0, 0, 0], &data[..]].concat();
+        let records = RecordList::new(&prefixed_data);
 
         // First key
         assert_add_key(&records, b"ABCD");
@@ -317,7 +346,9 @@ mod tests {
 
         let keys = [(new_prev_key, prev_record.file_offset), (key, 770)];
         let new_data = records.put_keys(&keys, prev_record.pos..pos);
-        let new_records = RecordList::new(&new_data);
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_new_data = &[&[0, 0, 0, 0], &new_data[..]].concat();
+        let new_records = RecordList::new(&prefixed_new_data);
 
         // Find the newly added prev_key
         let (inserted_prev_key_pos, inserted_prev_record) =
@@ -347,7 +378,9 @@ mod tests {
             let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
             data.extend_from_slice(&encoded);
         }
-        let records = RecordList::new(&data);
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_data = &[&[0, 0, 0, 0], &data[..]].concat();
+        let records = RecordList::new(&prefixed_data);
 
         // Between two keys with same prefix, but first one being shorter
         assert_add_key_and_replace_prev(&records, b"ab", b"aa");

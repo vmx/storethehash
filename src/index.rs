@@ -17,7 +17,7 @@ use std::path::Path;
 use crate::buckets::Buckets;
 use crate::error::Error;
 use crate::primary::PrimaryStorage;
-use crate::recordlist::{self, RecordList};
+use crate::recordlist::{self, RecordList, BUCKETS_BITS_SIZE};
 
 pub const INDEX_VERSION: u8 = 2;
 
@@ -125,7 +125,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         let prefix_bytes: [u8; 4] = key[0..4].try_into().unwrap();
         let prefix = u32::from_le_bytes(prefix_bytes);
         let leading_bits = (1 << N) - 1;
-        let bucket = prefix & leading_bits;
+        let bucket: u32 = prefix & leading_bits;
 
         // Get the index file offset of the record list the key is in.
         let index_offset = self.buckets.get(bucket as usize)?;
@@ -193,7 +193,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                     };
 
                     // The new record won't be the last record
-                    let next_record_non_common_byte_pos = if pos < recordlist_size {
+                    let next_record_non_common_byte_pos = if pos < records.len() {
                         // In order to determine the minimal key size, we need to get the next key
                         // as well.
                         let next_record = records.read_record(pos);
@@ -224,12 +224,14 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
             .seek(SeekFrom::Current(0))
             .expect("It's always possible to get the current position.");
 
-        // Write new data to disk
+        // Write new data to disk. The record list is prefixed with bucket they are in. This is
+        // needed in order to reconstruct the in-memory buckets from the index itself.
         // TODO vmx 2020-11-25: This should be an error and not a panic
-        let new_data_size: [u8; 4] = u32::try_from(new_data.len())
+        let new_data_size: [u8; 4] = u32::try_from(new_data.len() + BUCKETS_BITS_SIZE)
             .expect("A record list cannot be bigger than 2^32.")
             .to_le_bytes();
         self.file.write_all(&new_data_size)?;
+        self.file.write_all(&bucket.to_le_bytes())?;
         self.file.write_all(&new_data)?;
         // Fsyncs are expensive
         //self.file.sync_data()?;
