@@ -145,17 +145,18 @@ fn extend_with_offset_and_key(vec: &mut Vec<u8>, key: &[u8], offset: u64) {
     vec.extend_from_slice(key);
 }
 
+/// Encodes a key and and offset into a single record
+pub fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
+    let mut encoded = Vec::with_capacity(FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
+    extend_with_offset_and_key(&mut encoded, key, offset);
+    encoded
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{extend_with_offset_and_key, Record, RecordList, FILE_OFFSET_BYTES, KEY_SIZE_BYTE};
+    use super::{encode_offset_and_key, Record, RecordList, FILE_OFFSET_BYTES, KEY_SIZE_BYTE};
 
     use std::str;
-
-    fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
-        let mut encoded = Vec::with_capacity(FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
-        extend_with_offset_and_key(&mut encoded, key, offset);
-        encoded
-    }
 
     #[test]
     fn test_encode_offset_and_key() {
