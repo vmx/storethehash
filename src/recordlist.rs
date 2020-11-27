@@ -12,11 +12,11 @@ const KEY_SIZE_BYTE: usize = 1;
 #[derive(Debug, PartialEq)]
 pub struct Record<'a> {
     // The current position (in bytes) of the record within the [`RecordList`]
-    pos: usize,
+    pub pos: usize,
     /// The key of the record.
-    key: &'a [u8],
+    pub key: &'a [u8],
     /// The file offset where the full key and its value is actually stored.
-    file_offset: u64,
+    pub file_offset: u64,
 }
 
 /// The main object that contains several [`Record`]s. Records can be stored and retrieved.
