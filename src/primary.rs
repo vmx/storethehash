@@ -11,6 +11,9 @@ pub enum PrimaryError {
     OutOfBounds,
     #[error("IO error.")]
     Io(#[from] std::io::Error),
+    // Catch-all for errors that could happen within the primary storage.
+    #[error(transparent)]
+    Other(Box<dyn std::error::Error>),
 }
 
 pub trait PrimaryStorage {
