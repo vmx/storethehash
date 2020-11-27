@@ -1,3 +1,13 @@
+//! An append-only log [`recordlist`]s.
+//!
+//! The format of that append only log is:
+//!
+//! ```text
+//!     |                  Once              |                    Repeated                 |
+//!     |                                    |                                             |
+//!     |       4 bytes      | Variable size |         4 bytes        |  Variable size | … |
+//!     | Size of the header |   [`Header`]  | Size of the Recordlist |   Recordlist   | … |
+//! ```
 use std::cmp;
 use std::convert::{TryFrom, TryInto};
 use std::fs::{File, OpenOptions};
@@ -9,7 +19,7 @@ use crate::error::Error;
 use crate::primary::PrimaryStorage;
 use crate::recordlist::{self, RecordList};
 
-const INDEX_VERSION: u8 = 1;
+pub const INDEX_VERSION: u8 = 2;
 
 /// Remove the prefix that is used for the bucket.
 ///
@@ -18,6 +28,45 @@ const INDEX_VERSION: u8 = 1;
 /// value of 19 will remove only 2 bytes, whereas 24 bits removes 3 bytes.
 fn strip_bucket_prefix(key: &[u8], bits: u8) -> &[u8] {
     &key[usize::from(bits / 8)..]
+}
+
+/// The header of the index
+///
+/// The serialized header is:
+/// ```text
+///     |         1 byte        |                1 byte               |
+///     | Version of the header | Number of bits used for the buckets |
+/// ```
+#[derive(Debug)]
+pub struct Header {
+    /// A version number in case we change the header
+    pub version: u8,
+    /// The number of bits used to determine the in-memory buckets
+    pub buckets_bits: u8,
+}
+
+impl Header {
+    pub fn new(buckets_bits: u8) -> Self {
+        Self {
+            version: INDEX_VERSION,
+            buckets_bits,
+        }
+    }
+}
+
+impl From<Header> for Vec<u8> {
+    fn from(header: Header) -> Self {
+        vec![header.version, header.buckets_bits]
+    }
+}
+
+impl From<&[u8]> for Header {
+    fn from(bytes: &[u8]) -> Self {
+        Self {
+            version: bytes[0],
+            buckets_bits: bytes[1],
+        }
+    }
 }
 
 pub struct Index<P: PrimaryStorage, const N: u8> {
@@ -42,10 +91,17 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 file.seek(SeekFrom::End(0))?;
                 file
             }
-            // If the file doesn't exist yet create it and write the version byte at the front
+            // If the file doesn't exist yet create it with the correct header
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                let header: Vec<u8> = Header::new(N).into();
+                let header_size: [u8; 4] = u32::try_from(header.len())
+                    .expect("A header cannot be bigger than 2^32.")
+                    .to_le_bytes();
+
                 let mut file = options.create(true).open(index_path)?;
-                file.write(&[INDEX_VERSION])?;
+                file.write_all(&header_size)?;
+                file.write_all(&header)?;
+                file.sync_data()?;
                 file
             }
             Err(error) => Err(error)?,
