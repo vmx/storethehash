@@ -42,7 +42,7 @@ mod tests {
     fn new_buckets() {
         const BUCKETS_BITS: u8 = 24;
         let buckets = Buckets::<BUCKETS_BITS>::new();
-        assert_eq!(buckets.0.len(), (1 << BUCKETS_BITS) - 1);
+        assert_eq!(buckets.0.len(), 1 << BUCKETS_BITS);
     }
 
     #[test]
