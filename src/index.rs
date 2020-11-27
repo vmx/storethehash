@@ -120,6 +120,8 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
     pub fn put(&mut self, key: &[u8], file_offset: u64) -> Result<(), Error> {
         assert!(key.len() >= 4, "Key must be at least 4 bytes long");
 
+        // Determine which bucket a key falls into. Use the first few bytes of they key for it and
+        // interpret them as a little-endian integer.
         let prefix_bytes: [u8; 4] = key[0..4].try_into().unwrap();
         let prefix = u32::from_le_bytes(prefix_bytes);
         let leading_bits = (1 << N) - 1;
@@ -128,8 +130,8 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // Get the index file offset of the record list the key is in.
         let index_offset = self.buckets.get(bucket as usize)?;
 
-        // The doesn't need the prefix that was used to find the right bucket. For simplicty only
-        // full bytes are trimmed off.
+        // The key doesn't need the prefix that was used to find the right bucket. For simplicty
+        // only full bytes are trimmed off.
         let index_key = strip_bucket_prefix(&key, N);
 
         // No records stored in that bucket yet
