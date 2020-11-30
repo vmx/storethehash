@@ -11,8 +11,10 @@
 use std::cmp;
 use std::convert::{TryFrom, TryInto};
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+
+use log::{debug, warn};
 
 use crate::buckets::Buckets;
 use crate::error::Error;
@@ -20,6 +22,8 @@ use crate::primary::PrimaryStorage;
 use crate::recordlist::{self, RecordList, BUCKETS_BITS_SIZE};
 
 pub const INDEX_VERSION: u8 = 2;
+/// Number of bytes used for the size prefix of a record list.
+const SIZE_PREFIX_SIZE: usize = 4;
 
 /// Remove the prefix that is used for the bucket.
 ///
@@ -86,13 +90,57 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         let index_path = path.as_ref();
         let mut options = OpenOptions::new();
         let options = options.read(true).append(true);
-        let index_file = match options.open(index_path) {
+        debug!("Opening index file: {:?}", &index_path);
+        let (index_file, buckets) = match options.open(index_path) {
+            // If an existing file is opened, recreate the in-memory [`Buckets']
             Ok(mut file) => {
-                file.seek(SeekFrom::End(0))?;
-                file
+                // Read the header to determine whether the index was created with a different bit
+                // size for the buckets
+                let mut header_size_buffer = [0; SIZE_PREFIX_SIZE];
+                file.read_exact(&mut header_size_buffer)?;
+                let header_size = usize::try_from(u32::from_le_bytes(header_size_buffer))
+                    .expect(">=32-bit platform needed");
+                let mut header_bytes = vec![0u8; header_size];
+                file.read_exact(&mut header_bytes)?;
+                let header = Header::from(&header_bytes[..]);
+                if header.buckets_bits != N {
+                    return Err(Error::IndexWrongBitSize(header.buckets_bits, N));
+                }
+
+                debug!("Initalize buckets.");
+                // Fill up the in-memory buckets with the data from the index
+                let mut buckets = Buckets::<N>::new();
+                // TODO vmx 2020-11-30: Find if there's a better way than cloning the file. Perhaps
+                // a BufReader should be used instead of File for this whole module?
+                let mut buffered = BufReader::new(file.try_clone()?);
+                for entry in IndexBucketsIter::new(&mut buffered, SIZE_PREFIX_SIZE + header_size) {
+                    match entry {
+                        Ok((bucket_prefix, pos)) => {
+                            let bucket =
+                                usize::try_from(bucket_prefix).expect(">=32-bit platform needed");
+                            buckets
+                                .put(bucket, pos)
+                                .expect("Cannot be out of bounds as it was materialized before");
+                        }
+                        // The file is corrupt. Though it's not a problem, just take the data we
+                        // are able to use and move on.
+                        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => {
+                            //return Err(Error::IndexCorrupt);
+                            warn!("Index file is corrupt.");
+                            file.seek(SeekFrom::End(0))?;
+                            break;
+                        }
+                        Err(error) => return Err(error.into()),
+                    }
+                }
+
+                debug!("Intialize buckets done.");
+
+                (file, buckets)
             }
             // If the file doesn't exist yet create it with the correct header
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                debug!("Create new index.");
                 let header: Vec<u8> = Header::new(N).into();
                 let header_size: [u8; 4] = u32::try_from(header.len())
                     .expect("A header cannot be bigger than 2^32.")
@@ -102,13 +150,13 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 file.write_all(&header_size)?;
                 file.write_all(&header)?;
                 file.sync_data()?;
-                file
+                (file, Buckets::<N>::new())
             }
             Err(error) => Err(error)?,
         };
 
         Ok(Self {
-            buckets: Buckets::<N>::new(),
+            buckets,
             file: index_file,
             primary,
         })
@@ -241,6 +289,66 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
 
         Ok(())
     }
+}
+
+/// An iterator over index entries.
+///
+/// On each iteration it returns the position of the record together with the bucket prefix.
+#[derive(Debug)]
+pub struct IndexBucketsIter<R: Read> {
+    /// The index data we are iterating over
+    index: R,
+    /// The current position within the index
+    pos: usize,
+}
+
+impl<R: Read> IndexBucketsIter<R> {
+    pub fn new(index: R, pos: usize) -> Self {
+        Self { index, pos }
+    }
+}
+
+impl<R: Read + Seek> Iterator for IndexBucketsIter<R> {
+    type Item = Result<(u32, u64), io::Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match read_size_prefix(&mut self.index) {
+            Ok(size) => {
+                let pos = u64::try_from(self.pos).expect("64-bit platform needed");
+                // Advance the position to the end of records list
+                self.pos += SIZE_PREFIX_SIZE + size;
+
+                // The reader is now at the start of a records list
+                let bucket_prefix = match recordlist::read_bucket_prefix(&mut self.index) {
+                    Ok(bucket_prefix) => bucket_prefix,
+                    Err(error) => return Some(Err(error)),
+                };
+
+                // We don't need the actual records list, skip over it.
+                let recordlist_size = i64::try_from(size - BUCKETS_BITS_SIZE)
+                    .expect("Records list is than 2^32 - 1 bytes");
+                match self.index.seek(SeekFrom::Current(recordlist_size)) {
+                    Ok(seek_pos) => {
+                        assert_eq!(seek_pos, self.pos as u64);
+                    },
+                    Err(error) => return Some(Err(error)),
+                }
+
+                Some(Ok((bucket_prefix, pos)))
+            }
+            // Stop iteration if the end of the file is reached.
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => None,
+            Err(error) => Some(Err(error)),
+        }
+    }
+}
+
+/// Only reads the size prefix of the data and returns it.
+pub fn read_size_prefix<R: Read>(reader: &mut R) -> Result<usize, io::Error> {
+    let mut size_buffer = [0; SIZE_PREFIX_SIZE];
+    reader.read_exact(&mut size_buffer)?;
+    let size = usize::try_from(u32::from_le_bytes(size_buffer)).expect(">=32-bit platform needed");
+    Ok(size)
 }
 
 /// Returns the position of the first character that both given slices have not in common.

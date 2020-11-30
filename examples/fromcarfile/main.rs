@@ -58,6 +58,7 @@ fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_pat
 }
 
 fn main() {
+    fil_logger::init();
     let mut args = env::args().skip(1);
     let car_path_arg = args.next();
     let index_path_arg = args.next();

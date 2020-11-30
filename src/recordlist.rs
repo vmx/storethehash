@@ -1,5 +1,6 @@
 ///! Implement a data structure that supports storing and retrieving file offsets by key.
 use std::convert::TryInto;
+use std::io::{self, Read};
 use std::ops::Range;
 
 /// How many bytes the buckets bits information has. It prefixes all record lists.
@@ -171,6 +172,14 @@ pub fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
     let mut encoded = Vec::with_capacity(FILE_OFFSET_BYTES + KEY_SIZE_BYTE + key.len());
     extend_with_offset_and_key(&mut encoded, key, offset);
     encoded
+}
+
+/// Only reads the bucket prefix and returns it.
+pub fn read_bucket_prefix<R: Read>(reader: &mut R) -> Result<u32, io::Error> {
+    let mut bucket_prefix_buffer = [0; BUCKETS_BITS_SIZE];
+    reader.read_exact(&mut bucket_prefix_buffer)?;
+    let bucket_prefix_buffer = u32::from_le_bytes(bucket_prefix_buffer);
+    Ok(bucket_prefix_buffer)
 }
 
 #[cfg(test)]
