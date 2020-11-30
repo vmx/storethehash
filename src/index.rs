@@ -19,7 +19,7 @@ use log::{debug, warn};
 use crate::buckets::Buckets;
 use crate::error::Error;
 use crate::primary::PrimaryStorage;
-use crate::recordlist::{self, RecordList, BUCKETS_BITS_SIZE};
+use crate::recordlist::{self, RecordList, BUCKET_PREFIX_SIZE};
 
 pub const INDEX_VERSION: u8 = 2;
 /// Number of bytes used for the size prefix of a record list.
@@ -275,7 +275,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // Write new data to disk. The record list is prefixed with bucket they are in. This is
         // needed in order to reconstruct the in-memory buckets from the index itself.
         // TODO vmx 2020-11-25: This should be an error and not a panic
-        let new_data_size: [u8; 4] = u32::try_from(new_data.len() + BUCKETS_BITS_SIZE)
+        let new_data_size: [u8; 4] = u32::try_from(new_data.len() + BUCKET_PREFIX_SIZE)
             .expect("A record list cannot be bigger than 2^32.")
             .to_le_bytes();
         self.file.write_all(&new_data_size)?;
@@ -325,7 +325,7 @@ impl<R: Read + Seek> Iterator for IndexBucketsIter<R> {
                 };
 
                 // We don't need the actual records list, skip over it.
-                let recordlist_size = i64::try_from(size - BUCKETS_BITS_SIZE)
+                let recordlist_size = i64::try_from(size - BUCKET_PREFIX_SIZE)
                     .expect("Records list is than 2^32 - 1 bytes");
                 match self.index.seek(SeekFrom::Current(recordlist_size)) {
                     Ok(seek_pos) => {

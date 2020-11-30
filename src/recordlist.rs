@@ -3,8 +3,8 @@ use std::convert::TryInto;
 use std::io::{self, Read};
 use std::ops::Range;
 
-/// How many bytes the buckets bits information has. It prefixes all record lists.
-pub const BUCKETS_BITS_SIZE: usize = 4;
+/// In how many bytes the bucket prefixes are stored.
+pub const BUCKET_PREFIX_SIZE: usize = 4;
 
 // Byte size of the file offset
 const FILE_OFFSET_BYTES: usize = 8;
@@ -44,7 +44,7 @@ impl<'a> RecordList<'a> {
         // The record list itself doesn't care about the bits that were used to associate it with a
         // bucket, hence we just skip those.
         Self {
-            data: &data[BUCKETS_BITS_SIZE..],
+            data: &data[BUCKET_PREFIX_SIZE..],
         }
     }
 
@@ -176,7 +176,7 @@ pub fn encode_offset_and_key(key: &[u8], offset: u64) -> Vec<u8> {
 
 /// Only reads the bucket prefix and returns it.
 pub fn read_bucket_prefix<R: Read>(reader: &mut R) -> Result<u32, io::Error> {
-    let mut bucket_prefix_buffer = [0; BUCKETS_BITS_SIZE];
+    let mut bucket_prefix_buffer = [0; BUCKET_PREFIX_SIZE];
     reader.read_exact(&mut bucket_prefix_buffer)?;
     let bucket_prefix_buffer = u32::from_le_bytes(bucket_prefix_buffer);
     Ok(bucket_prefix_buffer)
