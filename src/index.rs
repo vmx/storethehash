@@ -107,9 +107,14 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 // TODO vmx 2020-11-30: Find if there's a better way than cloning the file. Perhaps
                 // a BufReader should be used instead of File for this whole module?
                 let mut buffered = BufReader::new(file.try_clone()?);
-                for entry in IndexBucketsIter::new(&mut buffered, SIZE_PREFIX_SIZE + bytes_read) {
+                for entry in IndexIter::new(&mut buffered, SIZE_PREFIX_SIZE + bytes_read) {
                     match entry {
-                        Ok((bucket_prefix, pos)) => {
+                        Ok((data, pos)) => {
+                            let bucket_prefix = u32::from_le_bytes(
+                                data[..BUCKET_PREFIX_SIZE]
+                                    .try_into()
+                                    .expect("Slice is guaranteed to be exactly 4 bytes"),
+                            );
                             let bucket =
                                 usize::try_from(bucket_prefix).expect(">=32-bit platform needed");
                             buckets
@@ -290,23 +295,24 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
 
 /// An iterator over index entries.
 ///
-/// On each iteration it returns the position of the record together with the bucket prefix.
+/// On each iteration it returns the position of the record within the index together with the raw
+/// record list data.
 #[derive(Debug)]
-pub struct IndexBucketsIter<R: Read> {
+pub struct IndexIter<R: Read> {
     /// The index data we are iterating over
     index: R,
     /// The current position within the index
     pos: usize,
 }
 
-impl<R: Read> IndexBucketsIter<R> {
+impl<R: Read> IndexIter<R> {
     pub fn new(index: R, pos: usize) -> Self {
         Self { index, pos }
     }
 }
 
-impl<R: Read + Seek> Iterator for IndexBucketsIter<R> {
-    type Item = Result<(u32, u64), io::Error>;
+impl<R: Read + Seek> Iterator for IndexIter<R> {
+    type Item = Result<(Vec<u8>, u64), io::Error>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match read_size_prefix(&mut self.index) {
@@ -315,23 +321,13 @@ impl<R: Read + Seek> Iterator for IndexBucketsIter<R> {
                 // Advance the position to the end of records list
                 self.pos += SIZE_PREFIX_SIZE + size;
 
-                // The reader is now at the start of a records list
-                let bucket_prefix = match recordlist::read_bucket_prefix(&mut self.index) {
-                    Ok(bucket_prefix) => bucket_prefix,
+                let mut data = vec![0u8; size];
+                match self.index.read_exact(&mut data) {
+                    Ok(_) => (),
                     Err(error) => return Some(Err(error)),
                 };
 
-                // We don't need the actual records list, skip over it.
-                let recordlist_size = i64::try_from(size - BUCKET_PREFIX_SIZE)
-                    .expect("Records list is than 2^32 - 1 bytes");
-                match self.index.seek(SeekFrom::Current(recordlist_size)) {
-                    Ok(seek_pos) => {
-                        assert_eq!(seek_pos, self.pos as u64);
-                    }
-                    Err(error) => return Some(Err(error)),
-                }
-
-                Some(Ok((bucket_prefix, pos)))
+                Some(Ok((data, pos)))
             }
             // Stop iteration if the end of the file is reached.
             Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => None,
