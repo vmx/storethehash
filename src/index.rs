@@ -96,13 +96,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
             Ok(mut file) => {
                 // Read the header to determine whether the index was created with a different bit
                 // size for the buckets
-                let mut header_size_buffer = [0; SIZE_PREFIX_SIZE];
-                file.read_exact(&mut header_size_buffer)?;
-                let header_size = usize::try_from(u32::from_le_bytes(header_size_buffer))
-                    .expect(">=32-bit platform needed");
-                let mut header_bytes = vec![0u8; header_size];
-                file.read_exact(&mut header_bytes)?;
-                let header = Header::from(&header_bytes[..]);
+                let (header, bytes_read) = read_header(&mut file)?;
                 if header.buckets_bits != N {
                     return Err(Error::IndexWrongBitSize(header.buckets_bits, N));
                 }
@@ -113,7 +107,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 // TODO vmx 2020-11-30: Find if there's a better way than cloning the file. Perhaps
                 // a BufReader should be used instead of File for this whole module?
                 let mut buffered = BufReader::new(file.try_clone()?);
-                for entry in IndexBucketsIter::new(&mut buffered, SIZE_PREFIX_SIZE + header_size) {
+                for entry in IndexBucketsIter::new(&mut buffered, SIZE_PREFIX_SIZE + bytes_read) {
                     match entry {
                         Ok((bucket_prefix, pos)) => {
                             let bucket =
@@ -352,6 +346,17 @@ pub fn read_size_prefix<R: Read>(reader: &mut R) -> Result<usize, io::Error> {
     reader.read_exact(&mut size_buffer)?;
     let size = usize::try_from(u32::from_le_bytes(size_buffer)).expect(">=32-bit platform needed");
     Ok(size)
+}
+
+/// Returns the headet together with the bytes read.
+fn read_header(file: &mut File) -> Result<(Header, usize), io::Error> {
+    let mut header_size_buffer = [0; SIZE_PREFIX_SIZE];
+    file.read_exact(&mut header_size_buffer)?;
+    let header_size =
+        usize::try_from(u32::from_le_bytes(header_size_buffer)).expect(">=32-bit platform needed");
+    let mut header_bytes = vec![0u8; header_size];
+    file.read_exact(&mut header_bytes)?;
+    Ok((Header::from(&header_bytes[..]), header_size))
 }
 
 /// Returns the position of the first character that both given slices have not in common.
