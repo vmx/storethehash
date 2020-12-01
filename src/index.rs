@@ -184,7 +184,10 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
 
         // No records stored in that bucket yet
         let new_data = if index_offset == 0 {
-            recordlist::encode_offset_and_key(index_key, file_offset)
+            // As it's the first key a single byte is enough as it doesn't need to be distinguised
+            // from other keys.
+            let trimmed_index_key = &index_key[..1];
+            recordlist::encode_offset_and_key(trimmed_index_key, file_offset)
         }
         // Read the record list from disk and insert the new key
         else {
