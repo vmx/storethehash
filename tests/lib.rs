@@ -1,9 +1,10 @@
 use std::convert::{TryFrom, TryInto};
-use std::fs;
+use std::fs::{self, File};
 use std::path::Path;
 
-use storethehash::index::{Header, Index, INDEX_VERSION};
+use storethehash::index::{self, Header, Index, IndexIter, INDEX_VERSION, SIZE_PREFIX_SIZE};
 use storethehash::primary::{PrimaryError, PrimaryStorage};
+use storethehash::recordlist::RecordList;
 
 /// In-memory primary storage implementation.
 ///
@@ -41,6 +42,30 @@ fn assert_header(index_path: &Path, buckets_bits: u8) {
 }
 
 #[test]
+fn index_put_single_key() {
+    const BUCKETS_BITS: u8 = 24;
+    let primary_storage = InMemory::new();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let index_path = temp_dir.path().join("storethehash.index");
+    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
+
+    let mut file = File::open(index_path).unwrap();
+    let (_header, bytes_read) = index::read_header(&mut file).unwrap();
+
+    let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+        .next()
+        .unwrap()
+        .unwrap();
+    let recordlist = RecordList::new(&data);
+    let record = recordlist.into_iter().next().unwrap();
+    assert_eq!(
+        record.key.len(),
+        1,
+        "Key is trimmed to one byteas it's the only key in the record list"
+    );
+}
+
 fn index_put() {
     const BUCKETS_BITS: u8 = 24;
     let primary_storage = InMemory::new();

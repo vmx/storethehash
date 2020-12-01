@@ -23,7 +23,7 @@ use crate::recordlist::{self, RecordList, BUCKET_PREFIX_SIZE};
 
 pub const INDEX_VERSION: u8 = 2;
 /// Number of bytes used for the size prefix of a record list.
-const SIZE_PREFIX_SIZE: usize = 4;
+pub const SIZE_PREFIX_SIZE: usize = 4;
 
 /// Remove the prefix that is used for the bucket.
 ///
@@ -345,7 +345,7 @@ pub fn read_size_prefix<R: Read>(reader: &mut R) -> Result<usize, io::Error> {
 }
 
 /// Returns the headet together with the bytes read.
-fn read_header(file: &mut File) -> Result<(Header, usize), io::Error> {
+pub fn read_header(file: &mut File) -> Result<(Header, usize), io::Error> {
     let mut header_size_buffer = [0; SIZE_PREFIX_SIZE];
     file.read_exact(&mut header_size_buffer)?;
     let header_size =
