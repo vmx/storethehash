@@ -330,7 +330,7 @@ impl<R: Read + Seek> Iterator for IndexBucketsIter<R> {
                 match self.index.seek(SeekFrom::Current(recordlist_size)) {
                     Ok(seek_pos) => {
                         assert_eq!(seek_pos, self.pos as u64);
-                    },
+                    }
                     Err(error) => return Some(Err(error)),
                 }
 
