@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::env;
 use std::fs::File;
@@ -7,9 +6,7 @@ use std::io::BufReader;
 use storethehash::index::{self, IndexIter, SIZE_PREFIX_SIZE};
 use storethehash::recordlist::{RecordList, BUCKET_PREFIX_SIZE};
 
-fn index_stats(index_path: &str) -> BTreeMap<u32, Vec<String>> {
-    let mut stats = BTreeMap::new();
-
+fn index_info(index_path: &str) {
     let mut index_file = File::open(&index_path).unwrap();
 
     // Skip the header
@@ -34,12 +31,11 @@ fn index_stats(index_path: &str) -> BTreeMap<u32, Vec<String>> {
                     })
                     .collect();
 
-                stats.insert(bucket, keys);
+                println!("{}: {}", bucket, keys.join(" "));
             }
             Err(error) => panic!(error),
         }
     }
-    stats
 }
 
 fn main() {
@@ -48,10 +44,7 @@ fn main() {
     let index_path_arg = args.next();
     match index_path_arg {
         Some(index_path) => {
-            let stats = index_stats(&index_path);
-            for (bucket, keys) in stats.iter() {
-                println!("{}: {}", bucket, keys.join(" "));
-            }
+            index_info(&index_path);
         }
         _ => println!("usage: fromcarfile <path-to-car-file> <index-file>"),
     }
