@@ -214,19 +214,26 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                     let key_trim_pos = first_non_common_byte(index_key, prev_key);
 
                     // Only store the new key if it doesn't exist yet.
-                    if key_trim_pos > index_key.len() {
+                    if key_trim_pos >= index_key.len() {
                         return Ok(());
                     }
 
-                    let trimmed_prev_key = &prev_key[..key_trim_pos];
-                    let trimmed_index_key = &index_key[..key_trim_pos];
+                    let trimmed_prev_key = &prev_key[..=key_trim_pos];
+                    let trimmed_index_key = &index_key[..=key_trim_pos];
 
                     // Replace the existing previous key (which is too short) with a new one and
                     // also insert the new key.
-                    let keys = [
-                        (trimmed_prev_key, prev_record.file_offset),
-                        (trimmed_index_key, file_offset),
-                    ];
+                    let keys = if trimmed_prev_key < trimmed_index_key {
+                        [
+                            (trimmed_prev_key, prev_record.file_offset),
+                            (trimmed_index_key, file_offset),
+                        ]
+                    } else {
+                        [
+                            (trimmed_index_key, file_offset),
+                            (trimmed_prev_key, prev_record.file_offset),
+                        ]
+                    };
                     records.put_keys(&keys, prev_record.pos..pos)
 
                     // There is no need to do anything with the next key as the next key is
@@ -260,17 +267,10 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                         next_record_non_common_byte_pos,
                     );
 
-                    // The new key has no bytes in common, with neither the previous key, nor the
-                    // next key. Then a single byte of the key is enough.
-                    let trimmed_index_key = if min_prefix == 0 {
-                        &index_key[..1]
-                    } else {
-                        // We cannot trim beyond the key length
-                        let key_trim_pos = cmp::min(min_prefix, index_key.len());
+                    // We cannot trim beyond the key length
+                    let key_trim_pos = cmp::min(min_prefix, index_key.len());
 
-                        &index_key[0..key_trim_pos]
-                    };
-
+                    let trimmed_index_key = &index_key[0..=key_trim_pos];
                     records.put_keys(&[(trimmed_index_key, file_offset)], pos..pos)
                 }
             }

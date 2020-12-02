@@ -13,8 +13,8 @@ use storethehash::recordlist::RecordList;
 struct InMemory(Vec<Vec<u8>>);
 
 impl InMemory {
-    pub fn new() -> Self {
-        Default::default()
+    pub fn new(data: Vec<Vec<u8>>) -> Self {
+        InMemory(data)
     }
 }
 
@@ -41,17 +41,66 @@ fn assert_header(index_path: &Path, buckets_bits: u8) {
     assert_eq!(header.buckets_bits, buckets_bits);
 }
 
+// Asserts that given two keys that on the first insert the key is trimmed to a single byte and on
+// the second insert they are trimmed to the minimal distinguishable prefix
+fn assert_common_prefix_trimmed(key1: Vec<u8>, key2: Vec<u8>, expected_key_length: usize) {
+    const BUCKETS_BITS: u8 = 24;
+    let primary_storage = InMemory::new(vec![key1.clone(), key2.clone()]);
+    let temp_dir = tempfile::tempdir().unwrap();
+    let index_path = temp_dir.path().join("storethehash.index");
+    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    index.put(&key1, 0).unwrap();
+    index.put(&key2, 1).unwrap();
+
+    // Skip header
+    let mut file = File::open(index_path).unwrap();
+    let (_header, bytes_read) = index::read_header(&mut file).unwrap();
+
+    // The record list is append only, hence the first record list only contains the first insert
+    {
+        let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+            .next()
+            .unwrap()
+            .unwrap();
+        let recordlist = RecordList::new(&data);
+        let keys: Vec<usize> = recordlist
+            .into_iter()
+            .map(|record| record.key.to_vec().len())
+            .collect();
+        assert_eq!(keys, [1], "Single key has the expected length of 1");
+    }
+
+    // The second block contains both keys
+    {
+        let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+            .next()
+            .unwrap()
+            .unwrap();
+        let recordlist = RecordList::new(&data);
+        let keys: Vec<usize> = recordlist
+            .into_iter()
+            .map(|record| record.key.to_vec().len())
+            .collect();
+        assert_eq!(
+            keys,
+            [expected_key_length, expected_key_length],
+            "All keys are trimmed to their minimal distringuishable prefix"
+        );
+    }
+}
+
 // This test is about making sure that inserts into an empty bucket result in a key that is trimmed
 // to a single byte.
 #[test]
 fn index_put_single_key() {
-    const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new();
+    const BUCKETS_BITS: u8 = 8;
+    let primary_storage = InMemory::new(Vec::new());
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
 
+    // Skip header
     let mut file = File::open(index_path).unwrap();
     let (_header, bytes_read) = index::read_header(&mut file).unwrap();
 
@@ -73,13 +122,14 @@ fn index_put_single_key() {
 #[test]
 fn index_put_distinct_key() {
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new();
+    let primary_storage = InMemory::new(Vec::new());
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
     index.put(&[1, 2, 3, 55, 5, 6, 7, 8, 9, 10], 333).unwrap();
 
+    // Skip header
     let mut file = File::open(index_path).unwrap();
     let (_header, bytes_read) = index::read_header(&mut file).unwrap();
 
@@ -88,21 +138,66 @@ fn index_put_distinct_key() {
         .unwrap()
         .unwrap();
     let recordlist = RecordList::new(&data);
-    let keys: Vec<usize> = recordlist
+    let keys: Vec<Vec<u8>> = recordlist
         .into_iter()
-        .map(|record| record.key.to_vec().len())
+        .map(|record| record.key.to_vec())
         .collect();
-    assert_eq!(keys, [1, 1], "All keys are trimmed to a single byte");
+    assert_eq!(keys, [[4], [55]], "All keys are trimmed to a single byte");
 }
 
-fn index_put() {
+// This test is about making sure that a key is trimmed correctly if it shares a prefix with the
+// previous key
+#[test]
+fn index_put_prev_key_common_prefix() {
+    let key1 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let key2 = vec![1, 2, 3, 4, 5, 6, 9, 9, 9, 9];
+    assert_common_prefix_trimmed(key1, key2, 4);
+}
+
+// This test is about making sure that a key is trimmed correctly if it shares a prefix with the
+// next key
+#[test]
+fn index_put_next_key_common_prefix() {
+    let key1 = vec![1, 2, 3, 4, 5, 6, 9, 9, 9, 9];
+    let key2 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    assert_common_prefix_trimmed(key1, key2, 4);
+}
+
+// This test is about making sure that a key is trimmed correctly if it shares a prefix with the
+// previous and the next key, where the common prefix with the next key is longer.
+#[test]
+fn index_put_prev_and_next_key_common_prefix() {
+    let key1 = vec![1, 2, 3, 4, 5, 6, 9, 9, 9, 9];
+    let key2 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let key3 = vec![1, 2, 3, 4, 5, 6, 9, 8, 8, 8];
+
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new();
+    let primary_storage = InMemory::new(vec![key1.clone(), key2.clone(), key3.clone()]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(index_path, primary_storage).unwrap();
-    index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
-    index.put(&[1, 2, 3, 4, 5, 0, 0, 0, 9, 10], 222).unwrap();
+    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    index.put(&key1, 0).unwrap();
+    index.put(&key2, 1).unwrap();
+    index.put(&key3, 1).unwrap();
+
+    // Skip header
+    let mut file = File::open(index_path).unwrap();
+    let (_header, bytes_read) = index::read_header(&mut file).unwrap();
+
+    let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+        .last()
+        .unwrap()
+        .unwrap();
+    let recordlist = RecordList::new(&data);
+    let keys: Vec<Vec<u8>> = recordlist
+        .into_iter()
+        .map(|record| record.key.to_vec())
+        .collect();
+    assert_eq!(
+        keys,
+        [vec![4, 5, 6, 7], vec![4, 5, 6, 9, 8], vec![4, 5, 6, 9, 9]],
+        "Keys are correctly sorted and trimmed"
+    );
 }
 
 #[test]
@@ -112,14 +207,15 @@ fn index_header() {
     let index_path = temp_dir.path().join("storethehash.index");
 
     {
-        let primary_storage = InMemory::new();
+        let primary_storage = InMemory::new(Vec::new());
         let _index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
         assert_header(&index_path, BUCKETS_BITS);
     }
 
     // Check that the header doesn't change if the index is opened again.
     {
-        let _index = Index::<_, BUCKETS_BITS>::open(&index_path, InMemory::new()).unwrap();
+        let _index =
+            Index::<_, BUCKETS_BITS>::open(&index_path, InMemory::new(Vec::new())).unwrap();
         assert_header(&index_path, BUCKETS_BITS);
     }
 }
