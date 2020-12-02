@@ -66,6 +66,31 @@ fn index_put_single_key() {
     );
 }
 
+#[test]
+fn index_put_distinct_key() {
+    const BUCKETS_BITS: u8 = 24;
+    let primary_storage = InMemory::new();
+    let temp_dir = tempfile::tempdir().unwrap();
+    let index_path = temp_dir.path().join("storethehash.index");
+    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
+    index.put(&[1, 2, 3, 55, 5, 6, 7, 8, 9, 10], 333).unwrap();
+
+    let mut file = File::open(index_path).unwrap();
+    let (_header, bytes_read) = index::read_header(&mut file).unwrap();
+
+    let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+        .last()
+        .unwrap()
+        .unwrap();
+    let recordlist = RecordList::new(&data);
+    let keys: Vec<usize> = recordlist
+        .into_iter()
+        .map(|record| record.key.to_vec().len())
+        .collect();
+    assert_eq!(keys, [1, 1], "All keys are trimmed to a single byte");
+}
+
 fn index_put() {
     const BUCKETS_BITS: u8 = 24;
     let primary_storage = InMemory::new();

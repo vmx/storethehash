@@ -233,9 +233,10 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                     // already guaranteed to be distinguishable from the new key as it was already
                     // distinguishable from the previous key.
                 }
-                // The previous key is different from the one that should get inserted. Hence we
-                // only need to trim the new key to the smallest one possible that is still
-                // distinguishable from the previous and next key.
+                // The previous key is not fully contained in the key that should get inserted.
+                // Hence we only need to trim the new key to the smallest one possible that is
+                // still distinguishable from the previous (in case there is one) and next key
+                // (in case there is one).
                 _ => {
                     let prev_record_non_common_byte_pos = match prev_record {
                         Some(record) => first_non_common_byte(index_key, record.key),
@@ -259,10 +260,16 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                         next_record_non_common_byte_pos,
                     );
 
-                    // We cannot trim beyond the key length
-                    let key_trim_pos = cmp::min(min_prefix, index_key.len());
+                    // The new key has no bytes in common, with neither the previous key, nor the
+                    // next key. Then a single byte of the key is enough.
+                    let trimmed_index_key = if min_prefix == 0 {
+                        &index_key[..1]
+                    } else {
+                        // We cannot trim beyond the key length
+                        let key_trim_pos = cmp::min(min_prefix, index_key.len());
 
-                    let trimmed_index_key = &index_key[0..key_trim_pos];
+                        &index_key[0..key_trim_pos]
+                    };
 
                     records.put_keys(&[(trimmed_index_key, file_offset)], pos..pos)
                 }
