@@ -41,6 +41,8 @@ fn assert_header(index_path: &Path, buckets_bits: u8) {
     assert_eq!(header.buckets_bits, buckets_bits);
 }
 
+// This test is about making sure that inserts into an empty bucket result in a key that is trimmed
+// to a single byte.
 #[test]
 fn index_put_single_key() {
     const BUCKETS_BITS: u8 = 24;
@@ -66,6 +68,8 @@ fn index_put_single_key() {
     );
 }
 
+// This test is about making sure that a new key that doesn't share any prefix with other keys
+// within the same bucket is trimmed to a single byte.
 #[test]
 fn index_put_distinct_key() {
     const BUCKETS_BITS: u8 = 24;
