@@ -91,6 +91,29 @@ impl<'a> RecordList<'a> {
         result
     }
 
+    /// Get the primary storage file offset for that key.
+    ///
+    /// As the index is only storing prefixes and not the actual keys, the returned offset might
+    /// match, it's not guaranteed. Once the key is retieved from the primary storage it needs to
+    /// be checked if it actually matches.
+    pub fn get(&self, key: &[u8]) -> Option<u64> {
+        // Several prefixes can match a `key`, we are only interested in the last one that
+        // matches, hence keep a match around until we can be sure it's the last one.
+        let mut might_match = None;
+        for record in self {
+            // The stored prefix of the key needs to match the requested key.
+            if key.starts_with(record.key) {
+                might_match = Some(record);
+            }
+            // The previous key was a match and the current record isn't matching anymore. Now we
+            // are sure we found the last prefix that matches the key we search for.
+            else if might_match.is_some() && record.key > key {
+                break;
+            }
+        }
+        might_match.map(|record| record.file_offset)
+    }
+
     /// Reads a record from a slice at the givem position.
     ///
     /// The given position must point to the first byte where the record starts.
@@ -412,5 +435,55 @@ mod tests {
 
         // Last key
         assert_add_key_and_replace_prev(&records, b"xrlfgu", b"xrlfgs");
+    }
+
+    #[test]
+    fn record_list_get_key() {
+        // Create data
+        let keys: Vec<&str> = vec!["a", "ac", "b", "de", "dn", "nky", "xrlfg"];
+        let mut data = Vec::new();
+        for (ii, key) in keys.iter().enumerate() {
+            let encoded = encode_offset_and_key(key.as_bytes(), ii as u64);
+            data.extend_from_slice(&encoded);
+        }
+        // The record list have the bits that were used to determine the bucket as prefix
+        let prefixed_data = &[&[0, 0, 0, 0], &data[..]].concat();
+        let records = RecordList::new(&prefixed_data);
+
+        // First key
+        let file_offset = records.get(b"a").unwrap();
+        assert_eq!(file_offset, 0);
+
+        // Key with same prefix, but it's the second one
+        let file_offset = records.get(b"ac").unwrap();
+        assert_eq!(file_offset, 1);
+
+        // Key with same length as two other keys, sharing a prefix
+        let file_offset = records.get(b"de").unwrap();
+        assert_eq!(file_offset, 3);
+
+        // Key that is sharing a prefix, but is longer
+        let file_offset = records.get(b"dngho").unwrap();
+        assert_eq!(file_offset, 4);
+
+        // Key that is the last one
+        let file_offset = records.get(b"xrlfg").unwrap();
+        assert_eq!(file_offset, 6);
+
+        // Key that is shorter than the inserted ones cannot match
+        let file_offset = records.get(b"d");
+        assert_eq!(file_offset, None);
+
+        // Key that is before all keys
+        let file_offset = records.get(b"ABCD");
+        assert_eq!(file_offset, None);
+
+        // Key that is after all keys
+        let file_offset = records.get(b"zzzzz");
+        assert_eq!(file_offset, None);
+
+        // Key that matches a prefix of some keys, but doesn't match fully
+        let file_offset = records.get(b"dg");
+        assert_eq!(file_offset, None);
     }
 }
