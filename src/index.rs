@@ -278,8 +278,8 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
 
         let recordlist_pos = self
             .file
-            .seek(SeekFrom::Current(0))
-            .expect("It's always possible to get the current position.");
+            .seek(SeekFrom::End(0))
+            .expect("It's always possible to seek to the end of the file.");
 
         // Write new data to disk. The record list is prefixed with bucket they are in. This is
         // needed in order to reconstruct the in-memory buckets from the index itself.
