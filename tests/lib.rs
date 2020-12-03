@@ -201,6 +201,51 @@ fn index_put_prev_and_next_key_common_prefix() {
 }
 
 #[test]
+fn index_get_empty_index() {
+    let key = vec![1, 2, 3, 4, 5, 6, 9, 9, 9, 9];
+    const BUCKETS_BITS: u8 = 24;
+    let primary_storage = InMemory::new(Vec::new());
+    let temp_dir = tempfile::tempdir().unwrap();
+    let index_path = temp_dir.path().join("storethehash.index");
+    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let file_offset = index.get(&key).unwrap();
+    assert_eq!(file_offset, None, "Key was not found");
+}
+
+#[test]
+fn index_get() {
+    let key1 = vec![1, 2, 3, 4, 5, 6, 9, 9, 9, 9];
+    let key2 = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    let key3 = vec![1, 2, 3, 4, 5, 6, 9, 8, 8, 8];
+
+    const BUCKETS_BITS: u8 = 24;
+    let primary_storage = InMemory::new(vec![key1.clone(), key2.clone(), key3.clone()]);
+    let temp_dir = tempfile::tempdir().unwrap();
+    let index_path = temp_dir.path().join("storethehash.index");
+    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    index.put(&key1, 0).unwrap();
+    index.put(&key2, 1).unwrap();
+    index.put(&key3, 2).unwrap();
+
+    let first_key_file_offset = index.get(&key1).unwrap();
+    assert_eq!(first_key_file_offset, Some(0));
+
+    let second_key_file_offset = index.get(&key2).unwrap();
+    assert_eq!(second_key_file_offset, Some(1));
+
+    let third_key_file_offset = index.get(&key3).unwrap();
+    assert_eq!(third_key_file_offset, Some(2));
+
+    // It still hits a bucket where there are keys, but that key doesn't exist.
+    let not_found_in_bucket = index.get(&[1, 2, 3, 4, 5, 9]).unwrap();
+    assert_eq!(not_found_in_bucket, None);
+
+    // A key that matches some prefixes but it shorter than the prefixes.
+    let shorter_than_prefixes = index.get(&[1, 2, 3, 4, 5]).unwrap();
+    assert_eq!(shorter_than_prefixes, None);
+}
+
+#[test]
 fn index_header() {
     const BUCKETS_BITS: u8 = 24;
     let temp_dir = tempfile::tempdir().unwrap();

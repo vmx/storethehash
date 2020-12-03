@@ -298,6 +298,45 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
 
         Ok(())
     }
+
+    /// Get the file offset in the primary storage of a key.
+    pub fn get(&mut self, key: &[u8]) -> Result<Option<u64>, Error> {
+        assert!(key.len() >= 4, "Key must be at least 4 bytes long");
+
+        // Determine which bucket a key falls into. Use the first few bytes of they key for it and
+        // interpret them as a little-endian integer.
+        let prefix_bytes: [u8; 4] = key[0..4].try_into().unwrap();
+        let prefix = u32::from_le_bytes(prefix_bytes);
+        let leading_bits = (1 << N) - 1;
+        let bucket: u32 = prefix & leading_bits;
+
+        // Get the index file offset of the record list the key is in.
+        let index_offset = self.buckets.get(bucket as usize)?;
+        // The key doesn't need the prefix that was used to find the right bucket. For simplicty
+        // only full bytes are trimmed off.
+        let index_key = strip_bucket_prefix(&key, N);
+
+        // No records stored in that bucket yet
+        if index_offset == 0 {
+            Ok(None)
+        }
+        // Read the record list from disk and get the file offset of that key in the primary
+        // storage.
+        else {
+            let mut recordlist_size_buffer = [0; 4];
+            self.file.seek(SeekFrom::Start(index_offset))?;
+            self.file.read_exact(&mut recordlist_size_buffer)?;
+            let recordlist_size = usize::try_from(u32::from_le_bytes(recordlist_size_buffer))
+                .expect(">=32-bit platform needed");
+
+            let mut data = vec![0u8; recordlist_size];
+            self.file.read_exact(&mut data)?;
+
+            let records = RecordList::new(&data);
+            let file_offset = records.get(index_key);
+            Ok(file_offset)
+        }
+    }
 }
 
 /// An iterator over index entries.
