@@ -105,9 +105,9 @@ impl<'a> RecordList<'a> {
             if key.starts_with(record.key) {
                 might_match = Some(record);
             }
-            // The previous key was a match and the current record isn't matching anymore. Now we
-            // are sure we found the last prefix that matches the key we search for.
-            else if might_match.is_some() && record.key > key {
+            // No keys from here on can possibly match, hence stop iterating. If we had a prefix
+            // match, return that, else return none.
+            else if record.key > key {
                 break;
             }
         }
