@@ -4,6 +4,7 @@
 #![feature(min_const_generics)]
 
 pub mod buckets;
+pub mod db;
 pub mod error;
 pub mod index;
 pub mod primary;

@@ -76,7 +76,7 @@ impl From<&[u8]> for Header {
 pub struct Index<P: PrimaryStorage, const N: u8> {
     buckets: Buckets<N>,
     file: File,
-    primary: P,
+    pub primary: P,
 }
 
 impl<P: PrimaryStorage, const N: u8> Index<P, N> {

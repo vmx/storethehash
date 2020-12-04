@@ -7,8 +7,10 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 use std::process::exit;
 
 use cid::Cid;
+use storethehash::db::Db;
 use storethehash::index::Index;
 use storethehash::primary::{PrimaryError, PrimaryStorage};
+use storethehash_cid::CidPrimary;
 
 use cariter::CarIter;
 
@@ -66,6 +68,23 @@ fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_pat
     }
 }
 
+fn insert_into_db<R: Read>(car_iter: CarIter<R>, db_path: &str) {
+    const BUCKETS_BITS: u8 = 24;
+    let primary = CidPrimary::open(&db_path).unwrap();
+    let index_path = format!("{}{}", &db_path, ".index");
+    let mut db = Db::<_, BUCKETS_BITS>::open(primary, &index_path).unwrap();
+
+    let mut counter = 0;
+    for (cid, data, _pos) in car_iter {
+        if counter % 100000 == 0 {
+            println!("{} keys inserted", counter);
+        }
+        db.put(&cid, &data).unwrap();
+
+        counter += 1;
+    }
+}
+
 // Walk through the car file file and compare it with the data in the index.
 fn validate_index<R: Read>(
     car_file: CarFile,
@@ -111,14 +130,18 @@ fn main() {
             let car_iter = CarIter::new(car_file_for_iter_reader);
 
             let car_file_for_index = File::open(&car_path).unwrap();
-            let primary_storage = CarFile::new(car_file_for_index);
+            let car_storage = CarFile::new(car_file_for_index);
 
             match &command[..] {
-                "generate" => {
-                    insert_into_index(primary_storage, car_iter, &index_path);
+                "generate-index" => {
+                    insert_into_index(car_storage, car_iter, &index_path);
                     exit(0)
                 }
-                "validate" => match validate_index(primary_storage, car_iter, &index_path) {
+                "generate-db" => {
+                    insert_into_db(car_iter, &index_path);
+                    exit(0)
+                }
+                "validate" => match validate_index(car_storage, car_iter, &index_path) {
                     Ok(_) => {
                         println!("Index is valid.");
                         exit(0)
@@ -143,5 +166,5 @@ fn main() {
             }
         }
     }
-    println!("usage: fromcarfile [generate|validate] <path-to-car-file> <index-file>");
+    println!("usage: fromcarfile [generate-index|generate-db|validate] <path-to-car-file> <index-or-db-file>");
 }
