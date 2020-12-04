@@ -151,7 +151,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 file.sync_data()?;
                 (file, Buckets::<N>::new())
             }
-            Err(error) => Err(error)?,
+            Err(error) => return Err(error.into()),
         };
 
         Ok(Self {

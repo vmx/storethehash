@@ -96,6 +96,7 @@ impl<'a> RecordList<'a> {
     /// As the index is only storing prefixes and not the actual keys, the returned offset might
     /// match, it's not guaranteed. Once the key is retieved from the primary storage it needs to
     /// be checked if it actually matches.
+    #[allow(clippy::suspicious_else_formatting)]
     pub fn get(&self, key: &[u8]) -> Option<u64> {
         // Several prefixes can match a `key`, we are only interested in the last one that
         // matches, hence keep a match around until we can be sure it's the last one.
@@ -124,7 +125,7 @@ impl<'a> RecordList<'a> {
             .expect("This slice always has the correct size.");
         let size = usize::from(self.data[size_offset]);
         Record {
-            pos: pos,
+            pos,
             key: &self.data[size_offset + KEY_SIZE_BYTE..size_offset + KEY_SIZE_BYTE + size],
             file_offset: u64::from_le_bytes(file_offset),
         }
@@ -133,6 +134,11 @@ impl<'a> RecordList<'a> {
     /// The length of the record list.
     pub fn len(&self) -> usize {
         self.data.len()
+    }
+
+    /// Returns true if the record list is empty.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
