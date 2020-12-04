@@ -19,13 +19,23 @@ impl InMemory {
 }
 
 impl PrimaryStorage for InMemory {
-    fn get_key(&mut self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
+    fn get(&mut self, _pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
+        // We only store the index keys, hence only `get_index_key()` is implemented.
+        unimplemented!()
+    }
+
+    fn get_index_key(&mut self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
         let usize_pos = usize::try_from(pos).expect(">=64 bit platform needed");
         if usize_pos > self.0.len() {
             return Err(PrimaryError::OutOfBounds);
         }
 
         Ok(self.0[usize_pos].clone())
+    }
+
+    fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
+        // Only read access is needed for the tests.
+        unimplemented!()
     }
 }
 

@@ -25,7 +25,7 @@ impl CarFile {
 }
 
 impl PrimaryStorage for CarFile {
-    fn get_key(&mut self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
+    fn get(&mut self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
         let file_size = self.0.seek(SeekFrom::End(0))?;
         if pos > file_size {
             return Err(PrimaryError::OutOfBounds);
@@ -33,9 +33,17 @@ impl PrimaryStorage for CarFile {
 
         self.0.seek(SeekFrom::Start(pos))?;
         let (block, _bytes_read) = cariter::read_data(&mut self.0)?;
-        let (cid_bytes, _data) = cariter::read_block(&block);
-        let cid =
-            Cid::try_from(&cid_bytes[..]).map_err(|error| PrimaryError::Other(Box::new(error)))?;
+        Ok(cariter::read_block(&block))
+    }
+
+    fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
+        // It only reads from a CAR file, it cannot store anything.
+        unimplemented!()
+    }
+
+    fn index_key(key: &[u8]) -> Result<Vec<u8>, PrimaryError> {
+        // A CID is stored, but the index only contains the digest (the actual hash) of the CID.
+        let cid = Cid::try_from(&key[..]).map_err(|error| PrimaryError::Other(Box::new(error)))?;
         let digest = cid.hash().digest();
         Ok(digest.to_vec())
     }

@@ -207,7 +207,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 // key from the main data file in order to retrieve a key that is distinguishable
                 // from the one that should get inserted.
                 Some(prev_record) if index_key.starts_with(prev_record.key) => {
-                    let full_prev_key = self.primary.get_key(prev_record.file_offset)?;
+                    let full_prev_key = self.primary.get_index_key(prev_record.file_offset)?;
                     // The index key has already removed the prefix that is used to determine the
                     // bucket. Do the same for the full previous key.
                     let prev_key = strip_bucket_prefix(&full_prev_key[..], N);
