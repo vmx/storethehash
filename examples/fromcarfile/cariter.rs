@@ -1,6 +1,8 @@
 use std::convert::TryFrom;
 use std::io::{self, Read};
 
+use log::debug;
+
 /// Read and unsigen varint (LEB128) from a reader.
 ///
 /// Code is based on the Rust compiler:
@@ -38,6 +40,7 @@ impl<R: Read> CarIter<R> {
     pub fn new(mut reader: R) -> Self {
         // Ignore the header for now
         let (_header, bytes_read) = read_data(&mut reader).unwrap();
+        debug!("header size is {} bytes", bytes_read);
         CarIter {
             reader,
             pos: bytes_read,
