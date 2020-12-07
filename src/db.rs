@@ -23,12 +23,19 @@ impl<P: PrimaryStorage, const N: u8> Db<P, N> {
         Ok(Self { index })
     }
 
+    /// Returns the value of the given key.
     pub fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
         let index_key = P::index_key(&key)?;
         match self.index.get(&index_key)? {
             Some(file_offset) => {
-                let value = self.index.primary.get_value(file_offset)?;
-                Ok(Some(value))
+                let (primary_key, value) = self.index.primary.get(file_offset)?;
+                // The index stores only prefixes, hence check if the given key fully matches the
+                // key that is stored in the primary storage before returning the actual value.
+                if key == primary_key {
+                    Ok(Some(value))
+                } else {
+                    Ok(None)
+                }
             }
             None => Ok(None),
         }
