@@ -1,0 +1,19 @@
+header = """
+/* libstorethehash-db-cid Header */
+#ifdef __cplusplus
+extern "C" {
+#endif
+"""
+trailer = """
+#ifdef __cplusplus
+} /* extern "C" */
+#endif
+"""
+sys_includes = ["stddef.h", "stdint.h", "stdlib.h", "stdbool.h"]
+no_includes = true
+include_guard = "STORETHEHASH_DB_CID_H"
+include_version = true
+tab_width = 4
+style = "Type"
+language = "C"
+# cpp_compat = true

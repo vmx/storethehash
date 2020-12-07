@@ -18,5 +18,6 @@ storethehash-primary-cid = { path = "primary/cid" }
 
 [workspace]
 members = [
+  "db/cid-ffi",
   "primary/cid",
 ]
