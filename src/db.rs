@@ -24,7 +24,7 @@ impl<P: PrimaryStorage, const N: u8> Db<P, N> {
     }
 
     /// Returns the value of the given key.
-    pub fn get(&mut self, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
+    pub fn get(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Error> {
         let index_key = P::index_key(&key)?;
         match self.index.get(&index_key)? {
             Some(file_offset) => {

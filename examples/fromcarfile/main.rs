@@ -27,14 +27,15 @@ impl CarFile {
 }
 
 impl PrimaryStorage for CarFile {
-    fn get(&mut self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
-        let file_size = self.0.seek(SeekFrom::End(0))?;
+    fn get(&self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
+        let mut file = &self.0;
+        let file_size = file.seek(SeekFrom::End(0))?;
         if pos > file_size {
             return Err(PrimaryError::OutOfBounds);
         }
 
-        self.0.seek(SeekFrom::Start(pos))?;
-        let (block, _bytes_read) = cariter::read_data(&mut self.0)?;
+        file.seek(SeekFrom::Start(pos))?;
+        let (block, _bytes_read) = cariter::read_data(&mut file)?;
         Ok(cariter::read_block(&block))
     }
 
@@ -92,7 +93,7 @@ fn validate_index<R: Read>(
     index_path: &str,
 ) -> Result<(), (u64, Option<u64>)> {
     const BUCKETS_BITS: u8 = 24;
-    let mut index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
     let mut counter = 0;
     for (cid_bytes, _, pos) in car_iter {

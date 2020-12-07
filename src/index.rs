@@ -300,7 +300,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
     }
 
     /// Get the file offset in the primary storage of a key.
-    pub fn get(&mut self, key: &[u8]) -> Result<Option<u64>, Error> {
+    pub fn get(&self, key: &[u8]) -> Result<Option<u64>, Error> {
         assert!(key.len() >= 4, "Key must be at least 4 bytes long");
 
         // Determine which bucket a key falls into. Use the first few bytes of they key for it and
@@ -324,13 +324,14 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // storage.
         else {
             let mut recordlist_size_buffer = [0; 4];
-            self.file.seek(SeekFrom::Start(index_offset))?;
-            self.file.read_exact(&mut recordlist_size_buffer)?;
+            let mut file = &self.file;
+            file.seek(SeekFrom::Start(index_offset))?;
+            file.read_exact(&mut recordlist_size_buffer)?;
             let recordlist_size = usize::try_from(u32::from_le_bytes(recordlist_size_buffer))
                 .expect(">=32-bit platform needed");
 
             let mut data = vec![0u8; recordlist_size];
-            self.file.read_exact(&mut data)?;
+            file.read_exact(&mut data)?;
 
             let records = RecordList::new(&data);
             let file_offset = records.get(index_key);

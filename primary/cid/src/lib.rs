@@ -38,14 +38,15 @@ impl CidPrimary {
 }
 
 impl PrimaryStorage for CidPrimary {
-    fn get(&mut self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
-        let file_size = self.0.seek(SeekFrom::End(0))?;
+    fn get(&self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
+        let mut file = &self.0;
+        let file_size = file.seek(SeekFrom::End(0))?;
         if pos > file_size {
             return Err(PrimaryError::OutOfBounds);
         }
 
-        self.0.seek(SeekFrom::Start(pos))?;
-        let (block, _bytes_read) = read_data(&mut self.0)?;
+        file.seek(SeekFrom::Start(pos))?;
+        let (block, _bytes_read) = read_data(&mut file)?;
         read_block(&block)
     }
 

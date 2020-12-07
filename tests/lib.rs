@@ -19,12 +19,12 @@ impl InMemory {
 }
 
 impl PrimaryStorage for InMemory {
-    fn get(&mut self, _pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
+    fn get(&self, _pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
         // We only store the index keys, hence only `get_index_key()` is implemented.
         unimplemented!()
     }
 
-    fn get_index_key(&mut self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
+    fn get_index_key(&self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
         let usize_pos = usize::try_from(pos).expect(">=64 bit platform needed");
         if usize_pos > self.0.len() {
             return Err(PrimaryError::OutOfBounds);
@@ -217,7 +217,7 @@ fn index_get_empty_index() {
     let primary_storage = InMemory::new(Vec::new());
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     let file_offset = index.get(&key).unwrap();
     assert_eq!(file_offset, None, "Key was not found");
 }
