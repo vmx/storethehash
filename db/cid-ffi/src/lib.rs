@@ -12,6 +12,7 @@ const BUCKETS_BITS: u8 = 24;
 const RETURN_OK: u8 = 0;
 const RETURN_ERROR: u8 = 1;
 
+/// cbindgen:ignore
 pub type StoreTheHashCidDb = Db<CidPrimary, BUCKETS_BITS>;
 
 fn leak_buf(v: Vec<u8>, vallen: *mut size_t) -> *mut c_char {

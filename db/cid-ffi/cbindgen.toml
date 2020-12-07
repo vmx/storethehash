@@ -17,3 +17,8 @@ tab_width = 4
 style = "Type"
 language = "C"
 # cpp_compat = true
+after_includes = "\ntypedef struct StoreTheHashCidDb StoreTheHashCidDb;"
+
+[parse]
+parse_deps = true
+include = ['storethehash']
