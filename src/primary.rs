@@ -41,10 +41,4 @@ pub trait PrimaryStorage {
         let (key, _value) = self.get(pos)?;
         Self::index_key(&key)
     }
-
-    /// Returns the value that is stored at the given position.
-    fn get_value(&mut self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
-        let (_key, value) = self.get(pos)?;
-        Ok(value)
-    }
 }
