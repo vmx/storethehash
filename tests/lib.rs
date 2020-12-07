@@ -33,7 +33,7 @@ impl PrimaryStorage for InMemory {
         Ok(self.0[usize_pos].clone())
     }
 
-    fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
+    fn put(&self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
         // Only read access is needed for the tests.
         unimplemented!()
     }
@@ -58,7 +58,7 @@ fn assert_common_prefix_trimmed(key1: Vec<u8>, key2: Vec<u8>, expected_key_lengt
     let primary_storage = InMemory::new(vec![key1.clone(), key2.clone()]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&key1, 0).unwrap();
     index.put(&key2, 1).unwrap();
 
@@ -107,7 +107,7 @@ fn index_put_single_key() {
     let primary_storage = InMemory::new(Vec::new());
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
 
     // Skip header
@@ -135,7 +135,7 @@ fn index_put_distinct_key() {
     let primary_storage = InMemory::new(Vec::new());
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 222).unwrap();
     index.put(&[1, 2, 3, 55, 5, 6, 7, 8, 9, 10], 333).unwrap();
 
@@ -185,7 +185,7 @@ fn index_put_prev_and_next_key_common_prefix() {
     let primary_storage = InMemory::new(vec![key1.clone(), key2.clone(), key3.clone()]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&key1, 0).unwrap();
     index.put(&key2, 1).unwrap();
     index.put(&key3, 1).unwrap();
@@ -232,7 +232,7 @@ fn index_get() {
     let primary_storage = InMemory::new(vec![key1.clone(), key2.clone(), key3.clone()]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
-    let mut index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
     index.put(&key1, 0).unwrap();
     index.put(&key2, 1).unwrap();
     index.put(&key3, 2).unwrap();

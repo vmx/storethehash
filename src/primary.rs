@@ -21,7 +21,7 @@ pub trait PrimaryStorage {
     fn get(&self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError>;
 
     /// Saves a key-value pair and returns the position it was stored at.
-    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<u64, PrimaryError>;
+    fn put(&self, key: &[u8], value: &[u8]) -> Result<u64, PrimaryError>;
 
     /// Creates a key that can be used for the index.
     ///

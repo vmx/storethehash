@@ -41,7 +41,7 @@ impl<P: PrimaryStorage, const N: u8> Db<P, N> {
         }
     }
 
-    pub fn put(&mut self, key: &[u8], value: &[u8]) -> Result<(), Error> {
+    pub fn put(&self, key: &[u8], value: &[u8]) -> Result<(), Error> {
         let file_offset = self.index.primary.put(&key, &value)?;
         let index_key = P::index_key(&key)?;
         self.index.put(&index_key, file_offset)?;

@@ -8,6 +8,7 @@
 //!     |       4 bytes      | Variable size |         4 bytes        |  Variable size | … |
 //!     | Size of the header |   [`Header`]  | Size of the Recordlist |   Recordlist   | … |
 //! ```
+use std::cell::RefCell;
 use std::cmp;
 use std::convert::{TryFrom, TryInto};
 use std::fs::{File, OpenOptions};
@@ -74,7 +75,7 @@ impl From<&[u8]> for Header {
 }
 
 pub struct Index<P: PrimaryStorage, const N: u8> {
-    buckets: Buckets<N>,
+    buckets: RefCell<Buckets<N>>,
     file: File,
     pub primary: P,
 }
@@ -155,7 +156,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         };
 
         Ok(Self {
-            buckets,
+            buckets: RefCell::new(buckets),
             file: index_file,
             primary,
         })
@@ -164,7 +165,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
     /// Put a key together with a file offset into the index.
     ///
     /// The key needs to be a cryptographically secure hash and at least 4 bytes long.
-    pub fn put(&mut self, key: &[u8], file_offset: u64) -> Result<(), Error> {
+    pub fn put(&self, key: &[u8], file_offset: u64) -> Result<(), Error> {
         assert!(key.len() >= 4, "Key must be at least 4 bytes long");
 
         // Determine which bucket a key falls into. Use the first few bytes of they key for it and
@@ -175,11 +176,14 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         let bucket: u32 = prefix & leading_bits;
 
         // Get the index file offset of the record list the key is in.
-        let index_offset = self.buckets.get(bucket as usize)?;
+        let index_offset = self.buckets.borrow().get(bucket as usize)?;
 
         // The key doesn't need the prefix that was used to find the right bucket. For simplicty
         // only full bytes are trimmed off.
         let index_key = strip_bucket_prefix(&key, N);
+
+        // Reading and seekign needs mutable file accesss.
+        let mut file = &self.file;
 
         // No records stored in that bucket yet
         let new_data = if index_offset == 0 {
@@ -191,13 +195,13 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // Read the record list from disk and insert the new key
         else {
             let mut recordlist_size_buffer = [0; 4];
-            self.file.seek(SeekFrom::Start(index_offset))?;
-            self.file.read_exact(&mut recordlist_size_buffer)?;
+            file.seek(SeekFrom::Start(index_offset))?;
+            file.read_exact(&mut recordlist_size_buffer)?;
             let recordlist_size = usize::try_from(u32::from_le_bytes(recordlist_size_buffer))
                 .expect(">=32-bit platform needed");
 
             let mut data = vec![0u8; recordlist_size];
-            self.file.read_exact(&mut data)?;
+            file.read_exact(&mut data)?;
 
             let records = RecordList::new(&data);
             let (pos, prev_record) = records.find_key_position(index_key);
@@ -276,8 +280,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
             }
         };
 
-        let recordlist_pos = self
-            .file
+        let recordlist_pos = file
             .seek(SeekFrom::End(0))
             .expect("It's always possible to seek to the end of the file.");
 
@@ -287,14 +290,16 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         let new_data_size: [u8; 4] = u32::try_from(new_data.len() + BUCKET_PREFIX_SIZE)
             .expect("A record list cannot be bigger than 2^32.")
             .to_le_bytes();
-        self.file.write_all(&new_data_size)?;
-        self.file.write_all(&bucket.to_le_bytes())?;
-        self.file.write_all(&new_data)?;
+        file.write_all(&new_data_size)?;
+        file.write_all(&bucket.to_le_bytes())?;
+        file.write_all(&new_data)?;
         // Fsyncs are expensive
         //self.file.sync_data()?;
 
         // Keep the reference to the stored data in the bucket
-        self.buckets.put(bucket as usize, recordlist_pos)?;
+        self.buckets
+            .borrow_mut()
+            .put(bucket as usize, recordlist_pos)?;
 
         Ok(())
     }
@@ -311,7 +316,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         let bucket: u32 = prefix & leading_bits;
 
         // Get the index file offset of the record list the key is in.
-        let index_offset = self.buckets.get(bucket as usize)?;
+        let index_offset = self.buckets.borrow().get(bucket as usize)?;
         // The key doesn't need the prefix that was used to find the right bucket. For simplicty
         // only full bytes are trimmed off.
         let index_key = strip_bucket_prefix(&key, N);

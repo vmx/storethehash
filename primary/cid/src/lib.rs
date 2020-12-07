@@ -50,13 +50,14 @@ impl PrimaryStorage for CidPrimary {
         read_block(&block)
     }
 
-    fn put(&mut self, key: &[u8], value: &[u8]) -> Result<u64, PrimaryError> {
-        let file_size = self.0.seek(SeekFrom::End(0))?;
+    fn put(&self, key: &[u8], value: &[u8]) -> Result<u64, PrimaryError> {
+        let mut file = &self.0;
+        let file_size = file.seek(SeekFrom::End(0))?;
 
         let size = key.len() + value.len();
-        let _bytes_written = self.0.write_leb128(size)?;
-        self.0.write_all(&key)?;
-        self.0.write_all(&value)?;
+        let _bytes_written = file.write_leb128(size)?;
+        file.write_all(&key)?;
+        file.write_all(&value)?;
 
         Ok(file_size)
     }

@@ -39,7 +39,7 @@ impl PrimaryStorage for CarFile {
         Ok(cariter::read_block(&block))
     }
 
-    fn put(&mut self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
+    fn put(&self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
         // It only reads from a CAR file, it cannot store anything.
         unimplemented!()
     }
@@ -54,7 +54,7 @@ impl PrimaryStorage for CarFile {
 
 fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_path: &str) {
     const BUCKETS_BITS: u8 = 24;
-    let mut index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
+    let index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
     let mut counter = 0;
     for (cid_bytes, _, pos) in car_iter {
@@ -73,7 +73,7 @@ fn insert_into_db<R: Read>(car_iter: CarIter<R>, db_path: &str) {
     const BUCKETS_BITS: u8 = 24;
     let primary = CidPrimary::open(&db_path).unwrap();
     let index_path = format!("{}{}", &db_path, ".index");
-    let mut db = Db::<_, BUCKETS_BITS>::open(primary, &index_path).unwrap();
+    let db = Db::<_, BUCKETS_BITS>::open(primary, &index_path).unwrap();
 
     let mut counter = 0;
     for (cid, data, _pos) in car_iter {
