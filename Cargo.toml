@@ -14,7 +14,7 @@ tempfile = "3.1.0"
 cid = { version = "0.6.0", default-features = false, features = ["std"] }
 fil_logger = "0.1.2"
 serde_json = "1.0.59"
-storethehash-cid = { path = "primary/cid" }
+storethehash-primary-cid = { path = "primary/cid" }
 
 [workspace]
 members = [

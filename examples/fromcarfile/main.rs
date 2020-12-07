@@ -10,7 +10,7 @@ use cid::Cid;
 use storethehash::db::Db;
 use storethehash::index::Index;
 use storethehash::primary::{PrimaryError, PrimaryStorage};
-use storethehash_cid::CidPrimary;
+use storethehash_primary_cid::CidPrimary;
 
 use cariter::CarIter;
 
