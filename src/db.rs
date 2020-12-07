@@ -10,6 +10,7 @@ use crate::index::Index;
 use crate::primary::PrimaryStorage;
 
 /// A database to store and retrive key-value pairs.
+#[derive(Debug)]
 pub struct Db<P: PrimaryStorage, const N: u8> {
     index: Index<P, N>,
 }

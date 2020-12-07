@@ -74,6 +74,7 @@ impl From<&[u8]> for Header {
     }
 }
 
+#[derive(Debug)]
 pub struct Index<P: PrimaryStorage, const N: u8> {
     buckets: RefCell<Buckets<N>>,
     file: File,
