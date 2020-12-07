@@ -9,7 +9,7 @@ use crate::error::Error;
 use crate::index::Index;
 use crate::primary::PrimaryStorage;
 
-/// A databse to store and retrive key-value pairs.
+/// A database to store and retrive key-value pairs.
 pub struct Db<P: PrimaryStorage, const N: u8> {
     index: Index<P, N>,
 }
