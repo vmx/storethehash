@@ -2,7 +2,7 @@ use std::convert::TryInto;
 use std::fs::{self, File};
 use std::path::Path;
 
-use storethehash::index::{self, Header, Index, IndexIter, INDEX_VERSION, SIZE_PREFIX_SIZE};
+use storethehash::index::{self, Header, Index, IndexIter, INDEX_VERSION};
 use storethehash::recordlist::RecordList;
 use storethehash_primary_inmemory::InMemory;
 
@@ -35,7 +35,7 @@ fn assert_common_prefix_trimmed(key1: Vec<u8>, key2: Vec<u8>, expected_key_lengt
 
     // The record list is append only, hence the first record list only contains the first insert
     {
-        let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+        let (data, _pos) = IndexIter::new(&mut file, bytes_read)
             .next()
             .unwrap()
             .unwrap();
@@ -49,7 +49,7 @@ fn assert_common_prefix_trimmed(key1: Vec<u8>, key2: Vec<u8>, expected_key_lengt
 
     // The second block contains both keys
     {
-        let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+        let (data, _pos) = IndexIter::new(&mut file, bytes_read)
             .next()
             .unwrap()
             .unwrap();
@@ -81,7 +81,7 @@ fn index_put_single_key() {
     let mut file = File::open(index_path).unwrap();
     let (_header, bytes_read) = index::read_header(&mut file).unwrap();
 
-    let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+    let (data, _pos) = IndexIter::new(&mut file, bytes_read)
         .next()
         .unwrap()
         .unwrap();
@@ -110,7 +110,7 @@ fn index_put_distinct_key() {
     let mut file = File::open(index_path).unwrap();
     let (_header, bytes_read) = index::read_header(&mut file).unwrap();
 
-    let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+    let (data, _pos) = IndexIter::new(&mut file, bytes_read)
         .last()
         .unwrap()
         .unwrap();
@@ -165,7 +165,7 @@ fn index_put_prev_and_next_key_common_prefix() {
     let mut file = File::open(index_path).unwrap();
     let (_header, bytes_read) = index::read_header(&mut file).unwrap();
 
-    let (data, _pos) = IndexIter::new(&mut file, SIZE_PREFIX_SIZE + bytes_read)
+    let (data, _pos) = IndexIter::new(&mut file, bytes_read)
         .last()
         .unwrap()
         .unwrap();

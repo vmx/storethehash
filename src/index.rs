@@ -109,7 +109,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
                 // TODO vmx 2020-11-30: Find if there's a better way than cloning the file. Perhaps
                 // a BufReader should be used instead of File for this whole module?
                 let mut buffered = BufReader::new(file.try_clone()?);
-                for entry in IndexIter::new(&mut buffered, SIZE_PREFIX_SIZE + bytes_read) {
+                for entry in IndexIter::new(&mut buffered, bytes_read) {
                     match entry {
                         Ok((data, pos)) => {
                             let bucket_prefix = u32::from_le_bytes(
@@ -398,6 +398,9 @@ pub fn read_size_prefix<R: Read>(reader: &mut R) -> Result<usize, io::Error> {
 }
 
 /// Returns the headet together with the bytes read.
+///
+/// The bytes read include all the bytes that were read by this function. Hence it also includes
+/// the 4-byte size prefix of the header besides the size of the header data itself.
 pub fn read_header(file: &mut File) -> Result<(Header, usize), io::Error> {
     let mut header_size_buffer = [0; SIZE_PREFIX_SIZE];
     file.read_exact(&mut header_size_buffer)?;
@@ -405,7 +408,10 @@ pub fn read_header(file: &mut File) -> Result<(Header, usize), io::Error> {
         usize::try_from(u32::from_le_bytes(header_size_buffer)).expect(">=32-bit platform needed");
     let mut header_bytes = vec![0u8; header_size];
     file.read_exact(&mut header_bytes)?;
-    Ok((Header::from(&header_bytes[..]), header_size))
+    Ok((
+        Header::from(&header_bytes[..]),
+        SIZE_PREFIX_SIZE + header_size,
+    ))
 }
 
 /// Returns the position of the first character that both given slices have not in common.

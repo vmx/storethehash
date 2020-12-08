@@ -3,7 +3,7 @@ use std::env;
 use std::fs::File;
 use std::io::BufReader;
 
-use storethehash::index::{self, IndexIter, SIZE_PREFIX_SIZE};
+use storethehash::index::{self, IndexIter};
 use storethehash::recordlist::{RecordList, BUCKET_PREFIX_SIZE};
 
 fn index_info(index_path: &str) {
@@ -13,7 +13,7 @@ fn index_info(index_path: &str) {
     let (_header, bytes_read) = index::read_header(&mut index_file).unwrap();
 
     let mut buffered = BufReader::new(index_file);
-    for entry in IndexIter::new(&mut buffered, SIZE_PREFIX_SIZE + bytes_read) {
+    for entry in IndexIter::new(&mut buffered, bytes_read) {
         match entry {
             Ok((data, _pos)) => {
                 let bucket = u32::from_le_bytes(data[..BUCKET_PREFIX_SIZE].try_into().unwrap());
