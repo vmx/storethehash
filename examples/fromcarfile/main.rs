@@ -57,16 +57,13 @@ impl PrimaryStorage for CarFile {
 fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_path: &str) {
     let index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
-    let mut counter = 0;
-    for (cid_bytes, _, pos) in car_iter {
+    for (counter, (cid_bytes, _, pos)) in car_iter.enumerate() {
         if counter % 100000 == 0 {
             println!("{} keys inserted", counter);
         }
         let cid = Cid::try_from(&cid_bytes[..]).unwrap();
         let digest = cid.hash().digest();
         index.put(&digest, pos).unwrap();
-
-        counter += 1;
     }
 }
 
@@ -75,14 +72,11 @@ fn insert_into_db<R: Read>(car_iter: CarIter<R>, db_path: &str) {
     let index_path = format!("{}{}", &db_path, ".index");
     let db = Db::<_, BUCKETS_BITS>::open(primary, &index_path).unwrap();
 
-    let mut counter = 0;
-    for (cid, data, _pos) in car_iter {
+    for (counter, (cid, data, _pos)) in car_iter.enumerate() {
         if counter % 100000 == 0 {
             println!("{} keys inserted", counter);
         }
         db.put(&cid, &data).unwrap();
-
-        counter += 1;
     }
 }
 
@@ -94,8 +88,7 @@ fn validate_index<R: Read>(
 ) -> Result<(), (u64, Option<u64>)> {
     let index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
-    let mut counter = 0;
-    for (cid_bytes, _, pos) in car_iter {
+    for (counter, (cid_bytes, _, pos)) in car_iter.enumerate() {
         if counter % 100000 == 0 {
             println!("{} keys validated", counter);
         }
@@ -110,8 +103,6 @@ fn validate_index<R: Read>(
             None => return Err((pos, None)),
             _ => (),
         }
-
-        counter += 1;
     }
 
     Ok(())
