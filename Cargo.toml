@@ -20,4 +20,5 @@ storethehash-primary-cid = { path = "primary/cid" }
 members = [
   "db/cid-ffi",
   "primary/cid",
+  "primary/inmemory",
 ]

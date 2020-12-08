@@ -1,0 +1,8 @@
+[package]
+name = "storethehash-primary-inmemory"
+version = "0.1.0"
+authors = ["Volker Mische <volker.mische@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+storethehash = { path = "../../" }
