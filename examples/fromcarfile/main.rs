@@ -14,6 +14,8 @@ use storethehash_primary_cid::CidPrimary;
 
 use cariter::CarIter;
 
+const BUCKETS_BITS: u8 = 24;
+
 /// CAR file storage implementation.
 ///
 /// The primary storage is a CAR file.
@@ -53,7 +55,6 @@ impl PrimaryStorage for CarFile {
 }
 
 fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_path: &str) {
-    const BUCKETS_BITS: u8 = 24;
     let index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
     let mut counter = 0;
@@ -70,7 +71,6 @@ fn insert_into_index<R: Read>(car_file: CarFile, car_iter: CarIter<R>, index_pat
 }
 
 fn insert_into_db<R: Read>(car_iter: CarIter<R>, db_path: &str) {
-    const BUCKETS_BITS: u8 = 24;
     let primary = CidPrimary::open(&db_path).unwrap();
     let index_path = format!("{}{}", &db_path, ".index");
     let db = Db::<_, BUCKETS_BITS>::open(primary, &index_path).unwrap();
@@ -92,7 +92,6 @@ fn validate_index<R: Read>(
     car_iter: CarIter<R>,
     index_path: &str,
 ) -> Result<(), (u64, Option<u64>)> {
-    const BUCKETS_BITS: u8 = 24;
     let index = Index::<_, BUCKETS_BITS>::open(index_path, car_file).unwrap();
 
     let mut counter = 0;
