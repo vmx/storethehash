@@ -5,7 +5,7 @@ use crate::error::Error;
 /// The generic specifies how many bits are used to create the buckets. The number of buckets is
 /// 2 ^ bits.
 #[derive(Debug)]
-pub struct Buckets<const N: u8>(Vec<u64>);
+pub struct Buckets<const N: u8>(pub(crate) Vec<u64>);
 
 impl<const N: u8> Buckets<N> {
     /// Create an empty bucket

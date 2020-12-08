@@ -344,6 +344,11 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
             Ok(file_offset)
         }
     }
+
+    /// Return a copy of the in-memory index offsets, sorted by the buckets.
+    pub fn offsets(&self) -> Vec<u64> {
+        self.buckets.borrow().0.clone()
+    }
 }
 
 /// An iterator over index entries.
