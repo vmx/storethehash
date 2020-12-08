@@ -1,43 +1,10 @@
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryInto;
 use std::fs::{self, File};
 use std::path::Path;
 
 use storethehash::index::{self, Header, Index, IndexIter, INDEX_VERSION, SIZE_PREFIX_SIZE};
-use storethehash::primary::{PrimaryError, PrimaryStorage};
 use storethehash::recordlist::RecordList;
-
-/// In-memory primary storage implementation.
-///
-/// Internally it's using a vector of keys.
-#[derive(Debug, Default)]
-struct InMemory(Vec<Vec<u8>>);
-
-impl InMemory {
-    pub fn new(data: Vec<Vec<u8>>) -> Self {
-        InMemory(data)
-    }
-}
-
-impl PrimaryStorage for InMemory {
-    fn get(&self, _pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
-        // We only store the index keys, hence only `get_index_key()` is implemented.
-        unimplemented!()
-    }
-
-    fn get_index_key(&self, pos: u64) -> Result<Vec<u8>, PrimaryError> {
-        let usize_pos = usize::try_from(pos).expect(">=64 bit platform needed");
-        if usize_pos > self.0.len() {
-            return Err(PrimaryError::OutOfBounds);
-        }
-
-        Ok(self.0[usize_pos].clone())
-    }
-
-    fn put(&self, _key: &[u8], _value: &[u8]) -> Result<u64, PrimaryError> {
-        // Only read access is needed for the tests.
-        unimplemented!()
-    }
-}
+use storethehash_primary_inmemory::InMemory;
 
 fn assert_header(index_path: &Path, buckets_bits: u8) {
     let index_data = fs::read(&index_path).unwrap();
@@ -55,7 +22,7 @@ fn assert_header(index_path: &Path, buckets_bits: u8) {
 // the second insert they are trimmed to the minimal distinguishable prefix
 fn assert_common_prefix_trimmed(key1: Vec<u8>, key2: Vec<u8>, expected_key_length: usize) {
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new(vec![key1.clone(), key2.clone()]);
+    let primary_storage = InMemory::new(&[(key1.clone(), vec![0x20]), (key2.clone(), vec![0x30])]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
@@ -104,7 +71,7 @@ fn assert_common_prefix_trimmed(key1: Vec<u8>, key2: Vec<u8>, expected_key_lengt
 #[test]
 fn index_put_single_key() {
     const BUCKETS_BITS: u8 = 8;
-    let primary_storage = InMemory::new(Vec::new());
+    let primary_storage = InMemory::new(&[]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
@@ -132,7 +99,7 @@ fn index_put_single_key() {
 #[test]
 fn index_put_distinct_key() {
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new(Vec::new());
+    let primary_storage = InMemory::new(&[]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
@@ -182,7 +149,11 @@ fn index_put_prev_and_next_key_common_prefix() {
     let key3 = vec![1, 2, 3, 4, 5, 6, 9, 8, 8, 8];
 
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new(vec![key1.clone(), key2.clone(), key3.clone()]);
+    let primary_storage = InMemory::new(&[
+        (key1.clone(), vec![0x10]),
+        (key2.clone(), vec![0x20]),
+        (key3.clone(), vec![0x30]),
+    ]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
@@ -214,7 +185,7 @@ fn index_put_prev_and_next_key_common_prefix() {
 fn index_get_empty_index() {
     let key = vec![1, 2, 3, 4, 5, 6, 9, 9, 9, 9];
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new(Vec::new());
+    let primary_storage = InMemory::new(&[]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
@@ -229,7 +200,11 @@ fn index_get() {
     let key3 = vec![1, 2, 3, 4, 5, 6, 9, 8, 8, 8];
 
     const BUCKETS_BITS: u8 = 24;
-    let primary_storage = InMemory::new(vec![key1.clone(), key2.clone(), key3.clone()]);
+    let primary_storage = InMemory::new(&[
+        (key1.clone(), vec![0x10]),
+        (key2.clone(), vec![0x20]),
+        (key3.clone(), vec![0x30]),
+    ]);
     let temp_dir = tempfile::tempdir().unwrap();
     let index_path = temp_dir.path().join("storethehash.index");
     let index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
@@ -262,15 +237,14 @@ fn index_header() {
     let index_path = temp_dir.path().join("storethehash.index");
 
     {
-        let primary_storage = InMemory::new(Vec::new());
+        let primary_storage = InMemory::new(&[]);
         let _index = Index::<_, BUCKETS_BITS>::open(&index_path, primary_storage).unwrap();
         assert_header(&index_path, BUCKETS_BITS);
     }
 
     // Check that the header doesn't change if the index is opened again.
     {
-        let _index =
-            Index::<_, BUCKETS_BITS>::open(&index_path, InMemory::new(Vec::new())).unwrap();
+        let _index = Index::<_, BUCKETS_BITS>::open(&index_path, InMemory::new(&[])).unwrap();
         assert_header(&index_path, BUCKETS_BITS);
     }
 }
