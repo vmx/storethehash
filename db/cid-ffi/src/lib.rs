@@ -37,10 +37,10 @@ pub unsafe extern "C" fn open_db(path: *const c_char) -> *mut StoreTheHashCidDb 
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn close(db: *mut StoreTheHashCidDb) {
-    drop(Box::from_raw(db))
-}
+//#[no_mangle]
+//pub unsafe extern "C" fn close(db: *mut StoreTheHashCidDb) {
+//    drop(Box::from_raw(db))
+//}
 
 /// Free a buffer originally allocated by rust
 #[no_mangle]
