@@ -4,5 +4,5 @@
 
 ```
 $ cargo install cargo-c
-$ cargo cinstall --prefix=/usr --destdir=/tmp/staging
+$ cargo cinstall --release --prefix=/usr --destdir=/tmp/staging
 ```
