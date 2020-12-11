@@ -9,6 +9,6 @@ name = "storethehash_db_cid"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-storethehash = { path = "../../" }
-storethehash-primary-cid = { path = "../../primary/cid" }
+storethehash = { version = "0.1.0", path = "../../" }
+storethehash-primary-cid = { version = "0.1.0", path = "../../primary/cid" }
 libc = "0.2.81"
