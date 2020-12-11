@@ -54,6 +54,26 @@ This storage is meant to also work with larger deployments with 100s of millions
 The index size (compacted) will be around 5 GiB.
 
 
+Possilbe improvements
+---------------------
+
+### Compaction
+
+Currently the index doesn't do any automated compaction. There is an example that does the simplest form of compaction with removing the no longer used record lists at the beginning of the file.
+
+A possible automated compaction could be implemented as a different index implementation. Instead of writing to a single file, write to a file up to a certain threshold and once reached create a new file. If all record lists in a file are no longer referenced by ant file offsets in the Bucket, that file can be deleted.
+
+
+### Concurrency
+
+Currently reads are blocked by writes. It's all synchronous and single threaded.
+
+
+### Deletions
+
+Currently no deletions are supported.
+
+
 License
 -------
 
