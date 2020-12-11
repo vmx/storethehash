@@ -36,6 +36,24 @@ The requirement for the primary storage is that it can return a key and value by
 There are two sample implementation of a primary storage provided. And in-memory storage and one that is [CID](https://github.com/multiformats/cid/) aware.
 
 
+Trade-offs
+----------
+
+This storage is meant to also work with larger deployments with 100s of millions of keys. There is a trade-off that needs to be made between the index growth and the memory usage. The lower the memory usage the larger the record lists become. There is some more overhead involved but here is an example of the approximate usage if you would have 512m keys.
+
+| Buckets bit size | Number of Buckets | Buckets memory consumption| Avg. keys per record list | Avg. key size (in bytes) | Record list size (key + 8 bytes file offset) |
+| -: | ------------: | -------: | --------: | --: | -------: |
+|  8 |           256 |    2 KiB | 2_000_000 | <=3 | < 21 MiB |
+| 12 |         4_096 |   32 KiB |   125_000 | <=3 | <  2 MiB |
+| 16 |        65_536 |  512 KiB |      7813 | <=2 | < 77 KiB |
+| 20 |     1_048_576 |    8 MiB |       489 | <=2 | <  5 KiB |
+| 24 |    16_777_216 |  128 MiB |        31 |   1 |  < 280 B |
+| 28 |   268_435_456 |    2 GiB |         2 |   1 |   < 19 B |
+| 32 | 4_294_967_296 |   32 GiB |         1 |   1 |    <10 B |
+
+The index size (compacted) will be around 5 GiB.
+
+
 License
 -------
 
