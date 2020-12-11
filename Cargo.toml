@@ -3,7 +3,10 @@ name = "storethehash"
 version = "0.1.0"
 authors = ["Volker Mische <volker.mische@gmail.com>"]
 edition = "2018"
+description = "Storage for hashes, targeted at content addressable systems."
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/vmx/storethehash/"
+keywords = ["database", "persistence", "content-addressable"]
 
 [dependencies]
 thiserror = "1.0.22"
