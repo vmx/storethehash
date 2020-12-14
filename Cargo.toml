@@ -7,6 +7,7 @@ description = "Storage for hashes, targeted at content addressable systems."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/vmx/storethehash/"
 keywords = ["database", "persistence", "content-addressable"]
+categories = ["database-implementations"]
 
 [dependencies]
 thiserror = "1.0.22"
