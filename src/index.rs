@@ -12,7 +12,7 @@ use std::cell::RefCell;
 use std::cmp;
 use std::convert::{TryFrom, TryInto};
 use std::fs::{File, OpenOptions};
-use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use log::{debug, warn};
@@ -77,7 +77,8 @@ impl From<&[u8]> for Header {
 #[derive(Debug)]
 pub struct Index<P: PrimaryStorage, const N: u8> {
     buckets: RefCell<Buckets<N>>,
-    file: File,
+    reader: File,
+    writer: RefCell<BufWriter<File>>,
     pub primary: P,
 }
 
@@ -158,7 +159,8 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
 
         Ok(Self {
             buckets: RefCell::new(buckets),
-            file: index_file,
+            reader: index_file.try_clone()?,
+            writer: RefCell::new(BufWriter::new(index_file)),
             primary,
         })
     }
@@ -183,8 +185,9 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // only full bytes are trimmed off.
         let index_key = strip_bucket_prefix(&key, N);
 
-        // Reading and seekign needs mutable file accesss.
-        let mut file = &self.file;
+        // Reading and seeking needs mutable file accesss.
+        let mut writer = self.writer.borrow_mut();
+        let mut reader = &self.reader;
 
         // No records stored in that bucket yet
         let new_data = if index_offset == 0 {
@@ -196,13 +199,13 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // Read the record list from disk and insert the new key
         else {
             let mut recordlist_size_buffer = [0; 4];
-            file.seek(SeekFrom::Start(index_offset))?;
-            file.read_exact(&mut recordlist_size_buffer)?;
+            reader.seek(SeekFrom::Start(index_offset))?;
+            reader.read_exact(&mut recordlist_size_buffer)?;
             let recordlist_size = usize::try_from(u32::from_le_bytes(recordlist_size_buffer))
                 .expect(">=32-bit platform needed");
 
             let mut data = vec![0u8; recordlist_size];
-            file.read_exact(&mut data)?;
+            reader.read_exact(&mut data)?;
 
             let records = RecordList::new(&data);
             let (pos, prev_record) = records.find_key_position(index_key);
@@ -281,7 +284,7 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
             }
         };
 
-        let recordlist_pos = file
+        let recordlist_pos = writer
             .seek(SeekFrom::End(0))
             .expect("It's always possible to seek to the end of the file.");
 
@@ -291,9 +294,9 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         let new_data_size: [u8; 4] = u32::try_from(new_data.len() + BUCKET_PREFIX_SIZE)
             .expect("A record list cannot be bigger than 2^32.")
             .to_le_bytes();
-        file.write_all(&new_data_size)?;
-        file.write_all(&bucket.to_le_bytes())?;
-        file.write_all(&new_data)?;
+        writer.write_all(&new_data_size)?;
+        writer.write_all(&bucket.to_le_bytes())?;
+        writer.write_all(&new_data)?;
         // Fsyncs are expensive
         //self.file.sync_data()?;
 
@@ -330,14 +333,14 @@ impl<P: PrimaryStorage, const N: u8> Index<P, N> {
         // storage.
         else {
             let mut recordlist_size_buffer = [0; 4];
-            let mut file = &self.file;
-            file.seek(SeekFrom::Start(index_offset))?;
-            file.read_exact(&mut recordlist_size_buffer)?;
+            let mut reader = &self.reader;
+            reader.seek(SeekFrom::Start(index_offset))?;
+            reader.read_exact(&mut recordlist_size_buffer)?;
             let recordlist_size = usize::try_from(u32::from_le_bytes(recordlist_size_buffer))
                 .expect(">=32-bit platform needed");
 
             let mut data = vec![0u8; recordlist_size];
-            file.read_exact(&mut data)?;
+            reader.read_exact(&mut data)?;
 
             let records = RecordList::new(&data);
             let file_offset = records.get(index_key);

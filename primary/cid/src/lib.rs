@@ -7,9 +7,10 @@
 //! [Car files]: https://github.com/ipld/specs/blob/d8ae7e9d78e4efe7e21ec2bae427d79b5af95bcd/block-layer/content-addressable-archives.md#format-description
 //! [LEB128]: https://en.wikipedia.org/wiki/LEB128
 
+use std::cell::RefCell;
 use std::convert::TryFrom;
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 
 use cid::Cid;
@@ -19,7 +20,10 @@ use wasabi_leb128::{ParseLeb128Error, ReadLeb128, WriteLeb128};
 
 /// A primary storage that is CID aware.
 #[derive(Debug)]
-pub struct CidPrimary(File);
+pub struct CidPrimary {
+    reader: File,
+    writer: RefCell<BufWriter<File>>,
+}
 
 impl CidPrimary {
     pub fn open<P>(path: P) -> Result<Self, PrimaryError>
@@ -33,13 +37,16 @@ impl CidPrimary {
             .append(true)
             .open(path)?;
         file.seek(SeekFrom::End(0))?;
-        Ok(Self(file))
+        Ok(Self {
+            reader: file.try_clone()?,
+            writer: RefCell::new(BufWriter::new(file)),
+        })
     }
 }
 
 impl PrimaryStorage for CidPrimary {
     fn get(&self, pos: u64) -> Result<(Vec<u8>, Vec<u8>), PrimaryError> {
-        let mut file = &self.0;
+        let mut file = &self.reader;
         let file_size = file.seek(SeekFrom::End(0))?;
         if pos > file_size {
             return Err(PrimaryError::OutOfBounds);
@@ -51,7 +58,7 @@ impl PrimaryStorage for CidPrimary {
     }
 
     fn put(&self, key: &[u8], value: &[u8]) -> Result<u64, PrimaryError> {
-        let mut file = &self.0;
+        let mut file = self.writer.borrow_mut();
         let file_size = file.seek(SeekFrom::End(0))?;
 
         let size = key.len() + value.len();
