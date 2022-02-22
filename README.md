@@ -54,7 +54,7 @@ This storage is meant to also work with larger deployments with 100s of millions
 The index size (compacted) will be around 5 GiB.
 
 
-Possilbe improvements
+Possible improvements
 ---------------------
 
 ### Compaction
